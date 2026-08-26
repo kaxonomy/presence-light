@@ -20,6 +20,7 @@ struct SavedConfig {
     autostart: bool,
     animations: bool,
     opacity: f64,
+    dot_size: u8,
     #[serde(skip_serializing_if = "Option::is_none")]
     position_x: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -35,6 +36,7 @@ impl Default for SavedConfig {
             autostart: false,
             animations: true,
             opacity: 1.0,
+            dot_size: 22,
             position_x: None,
             position_y: None,
         }
@@ -50,6 +52,7 @@ struct DesktopConfig {
     autostart: bool,
     animations: bool,
     opacity: f64,
+    dot_size: u8,
     position_x: Option<i32>,
     position_y: Option<i32>,
     configured: bool,
@@ -148,6 +151,7 @@ fn desktop_config(app: AppHandle) -> Result<DesktopConfig, String> {
         autostart,
         animations: config.animations,
         opacity: config.opacity,
+        dot_size: config.dot_size,
         position_x: config.position_x,
         position_y: config.position_y,
         configured,
@@ -164,6 +168,7 @@ fn save_desktop_config(
     autostart: bool,
     animations: bool,
     opacity: f64,
+    dot_size: u8,
 ) -> Result<(), String> {
     let worker_url = worker_url.trim().to_string();
     let token = token.trim().to_string();
@@ -175,6 +180,9 @@ fn save_desktop_config(
     }
     if !opacity.is_finite() || !(0.1..=1.0).contains(&opacity) {
         return Err("Choose an opacity from 10% to 100%.".to_string());
+    }
+    if !(14..=40).contains(&dot_size) {
+        return Err("Choose a dot size from 14px to 40px.".to_string());
     }
 
     let autolaunch = app.autolaunch();
@@ -196,6 +204,7 @@ fn save_desktop_config(
         autostart,
         animations,
         opacity,
+        dot_size,
         position_x: previous.position_x,
         position_y: previous.position_y,
     })
@@ -258,6 +267,7 @@ mod tests {
             autostart: true,
             animations: true,
             opacity: 0.75,
+            dot_size: 30,
             position_x: Some(20),
             position_y: Some(30),
         })
@@ -268,6 +278,7 @@ mod tests {
         assert!(config.autostart);
         assert!(config.animations);
         assert_eq!(config.opacity, 0.75);
+        assert_eq!(config.dot_size, 30);
         assert_eq!(config.position_x, Some(20));
         assert!(!config.can_control);
 
@@ -275,5 +286,6 @@ mod tests {
             serde_yaml::from_str("workerUrl: wss://example.com\ntoken: secret\n").unwrap();
         assert!(legacy.animations);
         assert_eq!(legacy.opacity, 1.0);
+        assert_eq!(legacy.dot_size, 22);
     }
 }

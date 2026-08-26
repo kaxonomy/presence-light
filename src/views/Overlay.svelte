@@ -9,7 +9,7 @@
     createPresenceTray,
     getDesktopConfig,
     prepareOverlay,
-    registerPresenceShortcut,
+    registerPresenceShortcuts,
     saveOverlayPosition,
     showDesktopConfiguration,
   } from '../lib/desktop';
@@ -21,6 +21,8 @@
   };
   let animations = true;
   let opacity = 1;
+  let dotSize = 22;
+  let pulsing = false;
   let setupError = '';
   const window = getCurrentWindow();
   let moving = false;
@@ -32,6 +34,10 @@
       moving = false;
       console.error('[presence] dot dragging failed', error);
     });
+  }
+
+  function acknowledge(): void {
+    pulsing = false;
   }
 
   onMount(() => {
@@ -56,12 +62,18 @@
         setupError = '';
         animations = config.animations;
         opacity = config.opacity;
+        dotSize = config.dotSize;
         client = createPresenceClient(config.workerUrl, config.token, config.canControl);
-        cleanup.push(client.store.subscribe((next) => (state = next)));
+        let firstState = true;
+        cleanup.push(client.store.subscribe((next) => {
+          if (!firstState && next.status !== state.status) pulsing = animations;
+          state = next;
+          firstState = false;
+        }));
         if (config.configured) client.start();
         if (!config.configured) await showDesktopConfiguration();
         else if (!config.startMinimized) await prepareOverlay(config.positionX, config.positionY);
-        cleanup.push(await registerPresenceShortcut(client));
+        cleanup.push(await registerPresenceShortcuts(client));
         try {
           const tray = await createPresenceTray(client);
           cleanup.push(() => tray.close());
@@ -82,6 +94,14 @@
 
     void reset();
     const stopRefresh = listen('configuration-saved', () => void reset());
+    const stopPreview = listen<Pick<import('../components/ConfigurationForm.svelte').Configuration, 'animations' | 'opacity' | 'dotSize'>>(
+      'configuration-preview',
+      ({ payload }) => {
+        animations = payload.animations;
+        opacity = payload.opacity;
+        dotSize = payload.dotSize;
+      },
+    );
     const stopMoved = window.onMoved(({ payload }) => {
       if (!moving) return;
       clearTimeout(moveTimer);
@@ -99,6 +119,7 @@
       client?.stop();
       for (const dispose of cleanup.reverse()) void dispose();
       void stopRefresh.then((stop) => stop());
+      void stopPreview.then((stop) => stop());
       void stopMoved.then((stop) => stop());
     };
   });
@@ -106,10 +127,16 @@
 
 <main
   aria-label="Presence overlay"
-  title={setupError || `Presence: ${state.status}`}
-  onpointerdown={startMoving}
 >
-  <PresenceDot status={state.status} animated={animations} {opacity} />
+  <button
+    type="button"
+    aria-label={setupError || `Acknowledge presence: ${state.status}`}
+    title={setupError || `Presence: ${state.status}`}
+    onpointerdown={startMoving}
+    onclick={acknowledge}
+  >
+    <PresenceDot status={state.status} animated={animations} {opacity} size={dotSize} {pulsing} onPulseEnd={acknowledge} />
+  </button>
 </main>
 
 <style>
@@ -125,6 +152,17 @@
     display: grid;
     width: 100vw;
     height: 100vh;
+    place-items: center;
+    background: transparent;
+    cursor: move;
+  }
+
+  button {
+    display: grid;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
     place-items: center;
     background: transparent;
     cursor: move;

@@ -6,15 +6,27 @@
     label = true,
     animated = true,
     opacity = 1,
-  }: { status: PresenceStatus; label?: boolean; animated?: boolean; opacity?: number } = $props();
+    size = 22,
+    pulsing = false,
+    onPulseEnd,
+  }: {
+    status: PresenceStatus;
+    label?: boolean;
+    animated?: boolean;
+    opacity?: number;
+    size?: number;
+    pulsing?: boolean;
+    onPulseEnd?: () => void;
+  } = $props();
 </script>
 
 <div
   class:available={status === 'available'}
   class:busy={status === 'busy'}
-  class:animated
+  class:pulsing={animated && pulsing}
   class="presence-dot"
-  style:opacity
+  style:opacity;--dot-size={`${size}px`}
+  onanimationend={onPulseEnd}
   role="status"
   aria-label={label ? `Presence: ${status}` : undefined}
   aria-hidden={!label}
@@ -24,8 +36,8 @@
   .presence-dot {
     --dot-color: #22c55e;
     position: relative;
-    width: 22px;
-    height: 22px;
+    width: var(--dot-size);
+    height: var(--dot-size);
     border: 2px solid rgb(255 255 255 / 0.82);
     border-radius: 50%;
     background: var(--dot-color);
@@ -43,8 +55,8 @@
     content: '';
   }
 
-  .presence-dot.animated::after {
-    animation: pulse 1.8s ease-out infinite;
+  .presence-dot.pulsing::after {
+    animation: pulse 1.8s ease-out;
   }
 
   .presence-dot:not(.animated)::after {
@@ -67,7 +79,7 @@
     75%,
     100% {
       opacity: 0;
-      transform: scale(1.9);
+      transform: scale(1.4);
     }
   }
 

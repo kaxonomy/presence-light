@@ -16,6 +16,7 @@
   let autostart = false;
   let animations = true;
   let opacity = 1;
+  let dotSize = 22;
   let configured = false;
   let busy = false;
   let error = '';
@@ -35,6 +36,7 @@
         autostart = configuration.autostart;
         animations = configuration.animations;
         opacity = configuration.opacity;
+        dotSize = configuration.dotSize;
         configured = configuration.configured;
       })
       .catch((cause) => {
@@ -58,6 +60,10 @@
       busy = false;
     }
   }
+
+  function preview(appearance: Pick<Configuration, 'animations' | 'opacity' | 'dotSize'>): void {
+    void getCurrentWindow().emitTo('overlay', 'configuration-preview', appearance);
+  }
 </script>
 
 <main>
@@ -65,7 +71,7 @@
     <header>
       <span class="mark" aria-hidden="true"></span>
       <div>
-        <h1 id="configuration-title">{configured ? 'Edit config.yml' : 'Set up Presence Light'}</h1>
+        <h1 id="configuration-title">{configured ? 'Edit Config' : 'Set up Presence Light'}</h1>
         <p>{configured ? 'Update this device and dot.' : 'Connect this computer to your shared presence room.'}</p>
       </div>
     </header>
@@ -77,12 +83,14 @@
       bind:autostart
       bind:animations
       bind:opacity
+      bind:dotSize
       showRole
       showAutostart
       showAppearance={configured}
       {busy}
       {error}
-      buttonLabel={configured ? 'Save config.yml' : 'Finish setup'}
+      buttonLabel={configured ? 'Save Config' : 'Finish setup'}
+      onPreview={preview}
       onSave={save}
     />
   </section>

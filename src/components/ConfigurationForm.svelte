@@ -6,6 +6,7 @@
     autostart: boolean;
     animations: boolean;
     opacity: number;
+    dotSize: number;
   };
 
   type Props = Configuration & {
@@ -15,6 +16,7 @@
     busy?: boolean;
     error?: string;
     buttonLabel?: string;
+    onPreview?: (appearance: Pick<Configuration, 'animations' | 'opacity' | 'dotSize'>) => void;
     onSave: (configuration: Configuration) => void | Promise<void>;
   };
 
@@ -25,12 +27,14 @@
     autostart = $bindable(),
     animations = $bindable(true),
     opacity = $bindable(1),
+    dotSize = $bindable(22),
     showRole = false,
     showAutostart = false,
     showAppearance = false,
     busy = false,
     error = '',
     buttonLabel = 'Save configuration',
+    onPreview,
     onSave,
   }: Props = $props();
   let inputError = $state('');
@@ -53,16 +57,22 @@
       return;
     }
 
-    void onSave({ workerUrl, token, canControl, autostart, animations, opacity });
+    void onSave({ workerUrl, token, canControl, autostart, animations, opacity, dotSize });
   }
+
+  $effect(() => {
+    if (showAppearance) onPreview?.({ animations, opacity, dotSize });
+  });
 </script>
 
 <form
+  class:split={showAppearance}
   onsubmit={(event) => {
     event.preventDefault();
     submit();
   }}
 >
+  <div class="connection-settings">
   <div class="field">
     <label for="worker-url">Worker WebSocket URL</label>
     <p id="worker-url-help">Paste the URL that connects this device to your presence room.</p>
@@ -115,6 +125,7 @@
       </span>
     </label>
   {/if}
+  </div>
 
   {#if showAppearance}
     <div class="appearance">
@@ -131,6 +142,11 @@
         <input type="range" min="0.1" max="1" step="0.05" bind:value={opacity} />
         <output>{Math.round(opacity * 100)}%</output>
       </label>
+      <label class="opacity">
+        <span>Size</span>
+        <input type="range" min="14" max="40" step="1" bind:value={dotSize} />
+        <output>{dotSize}px</output>
+      </label>
     </div>
   {/if}
 
@@ -145,6 +161,21 @@
   form {
     display: grid;
     gap: 12px;
+  }
+
+  form.split {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .connection-settings {
+    display: grid;
+    gap: 12px;
+  }
+
+  form.split > .error,
+  form.split > button {
+    grid-column: 1 / -1;
   }
 
   .field {
@@ -264,17 +295,12 @@
 
   .appearance {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
     gap: 8px;
     padding: 10px;
     border: 1px solid #36363d;
     border-radius: 10px;
     background: #19191e;
-  }
-
-  .appearance-title,
-  .opacity {
-    grid-column: 1 / -1;
   }
 
   .appearance-title {
@@ -292,6 +318,17 @@
     grid-template-columns: auto 1fr 42px;
     gap: 10px;
     align-items: center;
+  }
+
+  @media (max-width: 560px) {
+    form.split {
+      grid-template-columns: 1fr;
+    }
+
+    form.split > .error,
+    form.split > button {
+      grid-column: auto;
+    }
   }
 
   .opacity input {

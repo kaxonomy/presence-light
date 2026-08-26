@@ -12,7 +12,7 @@ Choose **Controller** only for a device that can change the status. The Worker m
 
 Select **Auto launch on startup** to register the desktop application for startup. An automatic start keeps the dot hidden.
 
-After setup, use **Edit config.yml…** from the tray to update the connection and dot appearance.
+After setup, use **Edit Config** from the tray to update the connection and dot appearance.
 
 Both clients add the token as the `token` query parameter. The Worker must accept this token format.
 

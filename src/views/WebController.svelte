@@ -99,6 +99,7 @@
         autostart={false}
         animations={true}
         opacity={1}
+        dotSize={22}
         onSave={save}
       />
       {#if workerUrl && token}

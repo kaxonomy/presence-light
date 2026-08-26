@@ -1,5 +1,6 @@
 import { defaultWindowIcon } from '@tauri-apps/api/app';
 import { invoke } from '@tauri-apps/api/core';
+import { Image } from '@tauri-apps/api/image';
 import { Menu, MenuItem, PredefinedMenuItem } from '@tauri-apps/api/menu';
 import { TrayIcon } from '@tauri-apps/api/tray';
 import { getCurrentWindow, PhysicalPosition, primaryMonitor, Window } from '@tauri-apps/api/window';
@@ -8,7 +9,8 @@ import { exit } from '@tauri-apps/plugin-process';
 import type { PresenceClient } from './presence/client';
 import type { PresenceState } from './presence/store';
 
-const SHORTCUT = 'Control+Shift+P';
+const STATUS_SHORTCUT = 'Control+Shift+P';
+const VISIBILITY_SHORTCUT = 'Control+Shift+O';
 const OVERLAY_MARGIN = 24;
 const OVERLAY_SIZE = 64;
 
@@ -19,6 +21,7 @@ export type DesktopConfig = {
   autostart: boolean;
   animations: boolean;
   opacity: number;
+  dotSize: number;
   positionX: number | null;
   positionY: number | null;
   configured: boolean;
@@ -36,6 +39,7 @@ export async function saveDesktopConfig(configuration: {
   autostart: boolean;
   animations: boolean;
   opacity: number;
+  dotSize: number;
 }): Promise<void> {
   return invoke('save_desktop_config', configuration);
 }
@@ -81,17 +85,19 @@ export async function prepareOverlay(positionX: number | null, positionY: number
   await window.show();
 }
 
-export async function registerPresenceShortcut(client: PresenceClient): Promise<() => Promise<void>> {
-  if (!client.canControl) return async () => {};
+export async function registerPresenceShortcuts(client: PresenceClient): Promise<() => Promise<void>> {
+  const window = getCurrentWindow();
+  const shortcuts = [VISIBILITY_SHORTCUT, ...(client.canControl ? [STATUS_SHORTCUT] : [])];
 
   let keyDown = false;
   try {
-    await register(SHORTCUT, (event) => {
+    await register(shortcuts, (event) => {
       if (event.state === 'Released') {
         keyDown = false;
       } else if (!keyDown) {
         keyDown = true;
-        client.toggle();
+        if (event.shortcut === STATUS_SHORTCUT) client.toggle();
+        else void window.isVisible().then((visible) => (visible ? window.hide() : window.show()));
       }
     });
   } catch (error) {
@@ -99,7 +105,21 @@ export async function registerPresenceShortcut(client: PresenceClient): Promise<
     return async () => {};
   }
 
-  return () => unregister(SHORTCUT);
+  return () => unregister(shortcuts);
+}
+
+async function statusIcon(red: boolean): Promise<Image | null> {
+  const icon = await defaultWindowIcon();
+  if (!icon || !red) return icon ?? null;
+  const rgba = await icon.rgba();
+  for (let index = 0; index < rgba.length; index += 4) {
+    if (rgba[index + 1] > rgba[index] * 1.2 && rgba[index + 1] > rgba[index + 2] * 1.2) {
+      rgba[index] = Math.max(rgba[index], rgba[index + 1]);
+      rgba[index + 1] = Math.round(rgba[index + 1] * 0.25);
+    }
+  }
+  const { width, height } = await icon.size();
+  return Image.new(rgba, width, height);
 }
 
 export async function createPresenceTray(client: PresenceClient): Promise<{
@@ -129,12 +149,12 @@ export async function createPresenceTray(client: PresenceClient): Promise<{
     items: [
       status,
       await PredefinedMenuItem.new({ item: 'Separator' }),
-      available,
-      busy,
-      await PredefinedMenuItem.new({ item: 'Separator' }),
+      ...(client.canControl
+        ? [available, busy, await PredefinedMenuItem.new({ item: 'Separator' })]
+        : []),
       await MenuItem.new({
         id: 'configuration',
-        text: 'Edit config.yml…',
+        text: 'Edit Config',
         action: () => void showDesktopConfiguration(),
       }),
       await MenuItem.new({ id: 'show', text: 'Show Dot', action: () => window.show() }),
@@ -145,8 +165,9 @@ export async function createPresenceTray(client: PresenceClient): Promise<{
       await MenuItem.new({ id: 'quit', text: 'Quit', action: () => exit(0) }),
     ],
   });
-  const icon = await defaultWindowIcon();
+  const icon = await statusIcon(false);
   if (!icon) throw new Error('The application icon is unavailable.');
+  let singleClickTimer: ReturnType<typeof setTimeout> | undefined;
   const tray = await TrayIcon.new({
     id: 'presence',
     icon,
@@ -154,7 +175,10 @@ export async function createPresenceTray(client: PresenceClient): Promise<{
     menuOnLeftClick: false,
     tooltip: 'Presence Dot',
     action: (event) => {
-      if (event.type === 'DoubleClick' && event.button === 'Left') {
+      if (event.type === 'Click' && event.button === 'Left') {
+        if (client.canControl) singleClickTimer = setTimeout(() => client.toggle(), 250);
+      } else if (event.type === 'DoubleClick' && event.button === 'Left') {
+        clearTimeout(singleClickTimer);
         void showDesktopConfiguration();
       }
     },
@@ -167,8 +191,12 @@ export async function createPresenceTray(client: PresenceClient): Promise<{
         connection.setText(
           `Connection: ${state.connection === 'connected' ? 'Connected' : 'Reconnecting'}`,
         ),
+        tray.setIcon(await statusIcon(state.status === 'busy')),
       ]);
     },
-    close: () => tray.close(),
+    close: async () => {
+      clearTimeout(singleClickTimer);
+      await tray.close();
+    },
   };
 }
