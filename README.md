@@ -4,25 +4,23 @@ Presence Light is a two-state presence client for one Cloudflare Worker room. It
 
 ## Configuration
 
-Copy `.env.example` to `.env` for browser development. Set `VITE_PRESENCE_WS_URL` to the Worker WebSocket URL.
+Open the controller page. Then enter the Worker WebSocket URL and the controller token.
 
-The browser stores its controller token in local storage. The token does not enter the Vite build or the source code.
+The browser stores the configuration in local storage. The token does not enter the Vite build or the source code.
 
-Set these runtime environment variables before you start the desktop application:
+Open **Configuration…** from the desktop tray menu. Enter the Worker WebSocket URL and the token for that device.
 
-```text
-PRESENCE_WS_URL=wss://worker.example.com/ws/my-room
-PRESENCE_TOKEN=replace-with-viewer-or-controller-token
-CAN_CONTROL=true
-```
+The desktop application stores the configuration in `config.yml`. This file is next to the executable.
 
-Set `CAN_CONTROL=false` for a viewer. The Worker must enforce authorization because this flag only controls the client UI.
+Select **Let this device change the status** only for a controller device. The Worker must enforce authorization.
 
-Packaged desktop apps read environment variables at process start. Launch the executable from an environment that defines the three values.
+Select **Start with this computer** to register the desktop application for startup. An automatic start keeps the dot hidden.
 
-Both clients append the token as the `token` query parameter. The Worker must accept this token format. Existing URL paths and query parameters remain unchanged.
+Both clients add the token as the `token` query parameter. The Worker must accept this token format.
 
 Use `ws://127.0.0.1:8787/...` for a local Worker. Use `wss://...` for production.
+
+For browser development, `VITE_PRESENCE_WS_URL` can supply the initial URL. The user can replace this URL in the controller page.
 
 ## Development
 
@@ -38,14 +36,13 @@ Start the browser controller:
 pnpm dev
 ```
 
-Start the desktop application with the required environment variables:
+Start the desktop application:
 
 ```sh
-PRESENCE_WS_URL=ws://127.0.0.1:8787/ws/example-room \
-PRESENCE_TOKEN=replace-me \
-CAN_CONTROL=true \
 pnpm tauri dev
 ```
+
+The configuration window opens when `config.yml` does not exist.
 
 ## Checks and builds
 

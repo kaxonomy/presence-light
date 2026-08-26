@@ -30,6 +30,17 @@
         "skipTaskbar": true,
         "visibleOnAllWorkspaces": true,
         "visible": false
+      },
+      {
+        "label": "configuration",
+        "title": "Presence Light Configuration",
+        "width": 520,
+        "height": 690,
+        "minWidth": 480,
+        "minHeight": 640,
+        "resizable": true,
+        "center": true,
+        "visible": false
       }
     ],
     "security": {

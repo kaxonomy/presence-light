@@ -1,14 +1,20 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import ConfigurationForm, {
+    type Configuration,
+  } from '../components/ConfigurationForm.svelte';
   import PresenceDot from '../components/PresenceDot.svelte';
   import { createPresenceClient, type PresenceClient } from '../lib/presence/client';
   import type { PresenceState } from '../lib/presence/store';
 
+  const URL_KEY = 'presence-controller-url';
   const TOKEN_KEY = 'presence-controller-token';
-  const endpoint = import.meta.env.VITE_PRESENCE_WS_URL?.trim() ?? '';
+  const defaultWorkerUrl = import.meta.env.VITE_PRESENCE_WS_URL?.trim() ?? '';
+  let workerUrl = '';
+  let workerUrlInput = '';
   let token = '';
   let tokenInput = '';
-  let editingToken = false;
+  let editing = false;
   let client: PresenceClient | undefined;
   let unsubscribe: (() => void) | undefined;
   let state: PresenceState = {
@@ -17,39 +23,51 @@
     connection: 'reconnecting',
   };
 
-  function connect(nextToken: string): void {
+  function connect(nextUrl: string, nextToken: string): void {
     client?.stop();
     unsubscribe?.();
     client = undefined;
     state = { ...state, connection: 'reconnecting' };
-    if (!endpoint || !nextToken) return;
+    if (!nextUrl || !nextToken) return;
 
-    client = createPresenceClient(endpoint, nextToken, true);
+    client = createPresenceClient(nextUrl, nextToken, true);
     unsubscribe = client.store.subscribe((next) => (state = next));
     client.start();
   }
 
-  function saveToken(): void {
-    token = tokenInput.trim();
-    if (!token) return;
+  function save(configuration: Configuration): void {
+    workerUrl = configuration.workerUrl;
+    token = configuration.token;
+    localStorage.setItem(URL_KEY, workerUrl);
     localStorage.setItem(TOKEN_KEY, token);
-    editingToken = false;
-    connect(token);
+    editing = false;
+    connect(workerUrl, token);
   }
 
-  function clearToken(): void {
+  function openConfiguration(): void {
+    workerUrlInput = workerUrl;
+    tokenInput = token;
+    editing = true;
+  }
+
+  function removeConfiguration(): void {
+    localStorage.removeItem(URL_KEY);
     localStorage.removeItem(TOKEN_KEY);
+    workerUrl = '';
+    workerUrlInput = '';
     token = '';
     tokenInput = '';
-    editingToken = true;
-    connect('');
+    editing = true;
+    connect('', '');
   }
 
   onMount(() => {
+    workerUrl = localStorage.getItem(URL_KEY) ?? defaultWorkerUrl;
     token = localStorage.getItem(TOKEN_KEY) ?? '';
+    workerUrlInput = workerUrl;
     tokenInput = token;
-    editingToken = !token;
-    connect(token);
+    editing = !workerUrl || !token;
+    connect(workerUrl, token);
     return () => {
       client?.stop();
       unsubscribe?.();
@@ -62,21 +80,28 @@
     <header>
       <PresenceDot status={state.status} />
       <div>
-        <h1 id="presence-title">{state.status === 'available' ? 'Available' : 'Busy'}</h1>
-        <p class:connected={state.connection === 'connected'}>
-          {state.connection === 'connected' ? 'Connected' : 'Reconnecting'}
+        <h1 id="presence-title">{editing ? 'Controller configuration' : state.status === 'available' ? 'Available' : 'Busy'}</h1>
+        <p class:connected={!editing && state.connection === 'connected'}>
+          {editing
+            ? 'Connect this browser to your shared presence room.'
+            : state.connection === 'connected'
+              ? 'Connected'
+              : 'Reconnecting'}
         </p>
       </div>
     </header>
 
-    {#if !endpoint}
-      <p class="error">Set <code>VITE_PRESENCE_WS_URL</code> before you build this page.</p>
-    {:else if editingToken}
-      <form on:submit|preventDefault={saveToken}>
-        <label for="token">Controller token</label>
-        <input id="token" type="password" bind:value={tokenInput} autocomplete="current-password" required />
-        <button type="submit" class="save">Save token</button>
-      </form>
+    {#if editing}
+      <ConfigurationForm
+        bind:workerUrl={workerUrlInput}
+        bind:token={tokenInput}
+        canControl={true}
+        autostart={false}
+        onSave={save}
+      />
+      {#if workerUrl && token}
+        <button type="button" class="text-button" on:click={() => (editing = false)}>Cancel</button>
+      {/if}
     {:else}
       <div class="actions" aria-label="Set presence">
         <button type="button" class="available" on:click={() => client?.setStatus('available')}>
@@ -84,9 +109,11 @@
         </button>
         <button type="button" class="busy" on:click={() => client?.setStatus('busy')}>Busy</button>
       </div>
-      <div class="token-actions">
-        <button type="button" on:click={() => (editingToken = true)}>Change token</button>
-        <button type="button" on:click={clearToken}>Clear token</button>
+      <div class="configuration-actions">
+        <button type="button" class="text-button" on:click={openConfiguration}>Configuration</button>
+        <button type="button" class="text-button" on:click={removeConfiguration}>
+          Forget this device
+        </button>
       </div>
     {/if}
   </section>
@@ -102,7 +129,7 @@
   }
 
   section {
-    width: min(100%, 360px);
+    width: min(100%, 390px);
     padding: 28px;
     border: 1px solid rgb(255 255 255 / 0.1);
     border-radius: 18px;
@@ -123,13 +150,15 @@
   }
 
   h1 {
-    font-size: 1.45rem;
+    font-size: 1.35rem;
   }
 
   header p {
+    max-width: 290px;
     margin-top: 3px;
     color: #fbbf24;
-    font-size: 0.86rem;
+    font-size: 0.82rem;
+    line-height: 1.45;
   }
 
   header p.connected {
@@ -142,24 +171,23 @@
     gap: 12px;
   }
 
-  button,
-  input {
-    width: 100%;
+  button {
     border: 0;
     border-radius: 9px;
-  }
-
-  button {
-    padding: 11px 13px;
     color: white;
+    font: inherit;
     font-weight: 700;
     cursor: pointer;
   }
 
-  button:focus-visible,
-  input:focus-visible {
+  button:focus-visible {
     outline: 3px solid #93c5fd;
     outline-offset: 2px;
+  }
+
+  .actions button {
+    width: 100%;
+    padding: 11px 13px;
   }
 
   button.available {
@@ -170,46 +198,24 @@
     background: #b91c1c;
   }
 
-  form {
-    display: grid;
-    gap: 10px;
-  }
-
-  label {
-    color: #d4d4d8;
-    font-size: 0.9rem;
-  }
-
-  input {
-    padding: 11px 12px;
-    color: white;
-    background: #09090b;
-    box-shadow: inset 0 0 0 1px #3f3f46;
-  }
-
-  button.save {
-    margin-top: 4px;
-    background: #2563eb;
-  }
-
-  .token-actions {
+  .configuration-actions {
     display: flex;
-    gap: 12px;
+    gap: 14px;
     justify-content: center;
     margin-top: 18px;
   }
 
-  .token-actions button {
+  .text-button {
     width: auto;
+    margin: 16px auto 0;
     padding: 4px;
     color: #a1a1aa;
+    background: transparent;
     font-size: 0.78rem;
     font-weight: 500;
-    background: transparent;
   }
 
-  .error {
-    color: #fecaca;
-    line-height: 1.55;
+  .configuration-actions .text-button {
+    margin: 0;
   }
 </style>

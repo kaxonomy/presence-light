@@ -8,6 +8,7 @@
     getDesktopConfig,
     prepareOverlay,
     registerPresenceShortcut,
+    showDesktopConfiguration,
   } from '../lib/desktop';
 
   let state: PresenceState = {
@@ -24,10 +25,11 @@
     void (async () => {
       try {
         const config = await getDesktopConfig();
-        client = createPresenceClient(config.wsUrl, config.token, config.canControl);
+        client = createPresenceClient(config.workerUrl, config.token, config.canControl);
         cleanup.push(client.store.subscribe((next) => (state = next)));
-        client.start();
-        await prepareOverlay();
+        if (config.configured) client.start();
+        if (!config.configured) await showDesktopConfiguration();
+        else if (!config.startMinimized) await prepareOverlay();
         cleanup.push(await registerPresenceShortcut(client));
         try {
           const tray = await createPresenceTray(client);
@@ -39,6 +41,11 @@
       } catch (error) {
         setupError = error instanceof Error ? error.message : String(error);
         console.error('[presence] desktop setup failed', error);
+        try {
+          await showDesktopConfiguration();
+        } catch (configurationError) {
+          console.error('[presence] configuration window failed', configurationError);
+        }
       }
     })();
 
