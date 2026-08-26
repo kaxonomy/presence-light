@@ -1,0 +1,20 @@
+[package]
+name = "presence-light"
+version = "0.1.0"
+description = "A small shared presence indicator"
+authors = ["Presence Light contributors"]
+edition = "2021"
+
+[lib]
+name = "presence_light_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-process = "2"
+
