@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { formatShortcut, shortcutFromKeyboardEvent } from '../lib/shortcut';
+
   export type Configuration = {
     workerUrl: string;
     token: string;
@@ -15,6 +17,7 @@
     showRole?: boolean;
     showAutostart?: boolean;
     showAppearance?: boolean;
+    autoSave?: boolean;
     busy?: boolean;
     error?: string;
     buttonLabel?: string;
@@ -30,11 +33,12 @@
     animations = $bindable(true),
     opacity = $bindable(1),
     dotSize = $bindable(22),
-    statusShortcut = $bindable('CommandOrControl+Shift+P'),
-    visibilityShortcut = $bindable('CommandOrControl+Shift+O'),
+    statusShortcut = $bindable('CommandOrControl+Shift+KeyP'),
+    visibilityShortcut = $bindable('CommandOrControl+Shift+KeyO'),
     showRole = false,
     showAutostart = false,
     showAppearance = false,
+    autoSave = false,
     busy = false,
     error = '',
     buttonLabel = 'Save configuration',
@@ -45,18 +49,39 @@
   let capturing = $state<'status' | 'visibility' | null>(null);
 
   function captureShortcut(event: KeyboardEvent): void {
-    if (!capturing || ['Control', 'Meta', 'Alt', 'Shift'].includes(event.key)) return;
+    if (!capturing) return;
     event.preventDefault();
     event.stopPropagation();
-    const parts = [
-      ...(event.ctrlKey || event.metaKey ? ['CommandOrControl'] : []),
-      ...(event.altKey ? ['Alt'] : []),
-      ...(event.shiftKey ? ['Shift'] : []),
-      event.key.length === 1 ? event.key.toUpperCase() : event.key,
-    ];
-    if (capturing === 'status') statusShortcut = parts.join('+');
-    else visibilityShortcut = parts.join('+');
+    if (event.key === 'Escape') {
+      capturing = null;
+      inputError = '';
+      return;
+    }
+    const shortcut = shortcutFromKeyboardEvent(event);
+    if (!shortcut) {
+      if (!['Control', 'Meta', 'Alt', 'Shift'].includes(event.key)) {
+        inputError = 'Use Ctrl or Cmd with another key. Function keys also work by themselves.';
+      }
+      return;
+    }
+    if (capturing === 'status') statusShortcut = shortcut;
+    else visibilityShortcut = shortcut;
     capturing = null;
+    inputError = '';
+  }
+
+  function configuration(): Configuration {
+    return {
+      workerUrl,
+      token,
+      canControl,
+      autostart,
+      animations,
+      opacity,
+      dotSize,
+      statusShortcut,
+      visibilityShortcut,
+    };
   }
 
   function submit(): void {
@@ -77,11 +102,13 @@
       return;
     }
 
-    void onSave({ workerUrl, token, canControl, autostart, animations, opacity, dotSize, statusShortcut, visibilityShortcut });
+    void onSave(configuration());
   }
 
   $effect(() => {
+    const current = configuration();
     if (showAppearance) onPreview?.({ animations, opacity, dotSize });
+    if (autoSave) void onSave(current);
   });
 </script>
 
@@ -94,7 +121,13 @@
     submit();
   }}
 >
-  <div class="connection-settings">
+  <div class:panel={showAppearance} class="connection-settings">
+  {#if showAppearance}
+    <div class="section-title">
+      <strong>Connection</strong>
+      <small>Changes reconnect automatically after you finish typing.</small>
+    </div>
+  {/if}
   <div class="field">
     <label for="worker-url">Worker WebSocket URL</label>
     <p id="worker-url-help">Paste the URL that connects this device to your presence room.</p>
@@ -151,9 +184,9 @@
 
   {#if showAppearance}
     <div class="appearance">
-      <div class="appearance-title">
-        <strong>Dot appearance</strong>
-        <small>Drag the dot anywhere on the desktop while this editor is open.</small>
+      <div class="section-title">
+        <strong>Indicator</strong>
+        <small>Appearance updates immediately. Drag the dot to reposition it.</small>
       </div>
       <label class="choice compact">
         <input type="checkbox" bind:checked={animations} />
@@ -171,18 +204,37 @@
       </label>
       <div class="shortcuts">
         <strong>Shortcuts</strong>
+        <small>Click a shortcut, then press the new keys together. Esc cancels.</small>
         {#if canControl}
           <label>
             <span>Toggle status</span>
-            <button type="button" class="shortcut" onclick={() => (capturing = 'status')}>
-              {capturing === 'status' ? 'Press keys…' : statusShortcut}
+            <button
+              type="button"
+              class="shortcut"
+              class:capturing={capturing === 'status'}
+              aria-pressed={capturing === 'status'}
+              onclick={() => {
+                capturing = 'status';
+                inputError = '';
+              }}
+            >
+              {capturing === 'status' ? 'Press shortcut…' : formatShortcut(statusShortcut)}
             </button>
           </label>
         {/if}
         <label>
           <span>Toggle visibility</span>
-          <button type="button" class="shortcut" onclick={() => (capturing = 'visibility')}>
-            {capturing === 'visibility' ? 'Press keys…' : visibilityShortcut}
+          <button
+            type="button"
+            class="shortcut"
+            class:capturing={capturing === 'visibility'}
+            aria-pressed={capturing === 'visibility'}
+            onclick={() => {
+              capturing = 'visibility';
+              inputError = '';
+            }}
+          >
+            {capturing === 'visibility' ? 'Press shortcut…' : formatShortcut(visibilityShortcut)}
           </button>
         </label>
       </div>
@@ -191,9 +243,16 @@
 
   {#if inputError || error}
     <p class="error" role="alert">{inputError || error}</p>
+  {:else if autoSave}
+    <p class="save-state" aria-live="polite">
+      <span class:busy aria-hidden="true"></span>
+      {busy ? 'Saving changes…' : 'Changes save automatically'}
+    </p>
   {/if}
 
-  <button type="submit" disabled={busy}>{busy ? 'Saving…' : buttonLabel}</button>
+  {#if !autoSave}
+    <button type="submit" disabled={busy}>{busy ? 'Saving…' : buttonLabel}</button>
+  {/if}
 </form>
 
 <style>
@@ -210,6 +269,15 @@
   .connection-settings {
     display: grid;
     gap: 12px;
+  }
+
+  .panel,
+  .appearance {
+    padding: 16px;
+    border: 1px solid rgb(255 255 255 / 0.09);
+    border-radius: 14px;
+    background: rgb(24 25 30 / 0.9);
+    box-shadow: 0 14px 34px rgb(0 0 0 / 0.12);
   }
 
   form.split > .error,
@@ -335,14 +403,10 @@
   .appearance {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 8px;
-    padding: 10px;
-    border: 1px solid #36363d;
-    border-radius: 10px;
-    background: #19191e;
+    gap: 12px;
   }
 
-  .appearance-title {
+  .section-title {
     display: grid;
     gap: 3px;
   }
@@ -361,7 +425,9 @@
 
   .shortcuts {
     display: grid;
-    gap: 8px;
+    gap: 10px;
+    padding-top: 4px;
+    border-top: 1px solid rgb(255 255 255 / 0.08);
   }
 
   .shortcuts label {
@@ -382,9 +448,16 @@
     background: #111114;
     font-size: 0.75rem;
     font-weight: 600;
+    white-space: nowrap;
   }
 
-  @media (max-width: 560px) {
+  button.shortcut.capturing {
+    border-color: #60a5fa;
+    color: white;
+    background: #1d4ed8;
+  }
+
+  @media (max-width: 680px) {
     form.split {
       grid-template-columns: 1fr;
     }
@@ -414,6 +487,34 @@
     background: rgb(127 29 29 / 0.18);
     font-size: 0.84rem;
     line-height: 1.45;
+  }
+
+  .save-state {
+    display: flex;
+    grid-column: 1 / -1;
+    gap: 8px;
+    align-items: center;
+    justify-content: flex-end;
+    color: #a1a1aa;
+    font-size: 0.78rem;
+  }
+
+  .save-state span {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #22c55e;
+  }
+
+  .save-state span.busy {
+    background: #fbbf24;
+    animation: saving 0.8s ease-in-out infinite alternate;
+  }
+
+  @keyframes saving {
+    to {
+      opacity: 0.35;
+    }
   }
 
   button {

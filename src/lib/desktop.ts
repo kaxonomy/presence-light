@@ -9,8 +9,8 @@ import { exit } from '@tauri-apps/plugin-process';
 import type { PresenceClient } from './presence/client';
 import type { PresenceState } from './presence/store';
 
-const DEFAULT_STATUS_SHORTCUT = 'CommandOrControl+Shift+P';
-const DEFAULT_VISIBILITY_SHORTCUT = 'CommandOrControl+Shift+O';
+const DEFAULT_STATUS_SHORTCUT = 'CommandOrControl+Shift+KeyP';
+const DEFAULT_VISIBILITY_SHORTCUT = 'CommandOrControl+Shift+KeyO';
 const OVERLAY_MARGIN = 24;
 const OVERLAY_SIZE = 64;
 
@@ -53,16 +53,23 @@ export async function saveOverlayPosition(positionX: number, positionY: number):
 }
 
 export async function showDesktopConfiguration(): Promise<void> {
-  const window = await Window.getByLabel('configuration');
-  if (!window) throw new Error('The configuration window is unavailable.');
-  await window.show();
-  await window.setFocus();
-  await (await Window.getByLabel('overlay'))?.setIgnoreCursorEvents(false);
+  const configuration = await Window.getByLabel('configuration');
+  if (!configuration) throw new Error('The configuration window is unavailable.');
+  const overlay = await Window.getByLabel('overlay');
+  if (!(await configuration.isVisible())) {
+    await configuration.emit('configuration-opened', (await overlay?.isVisible()) ?? false);
+  }
+  await overlay?.setIgnoreCursorEvents(false);
+  await overlay?.show();
+  await configuration.show();
+  await configuration.setFocus();
 }
 
-export async function hideDesktopConfiguration(): Promise<void> {
+export async function hideDesktopConfiguration(hideOverlay = false): Promise<void> {
   await getCurrentWindow().hide();
-  await (await Window.getByLabel('overlay'))?.setIgnoreCursorEvents(false);
+  const overlay = await Window.getByLabel('overlay');
+  if (hideOverlay) await overlay?.hide();
+  await overlay?.setIgnoreCursorEvents(false);
 }
 
 export async function prepareOverlay(positionX: number | null, positionY: number | null): Promise<void> {
@@ -94,32 +101,43 @@ export async function registerPresenceShortcuts(
   config: Pick<DesktopConfig, 'statusShortcut' | 'visibilityShortcut'>,
 ): Promise<() => Promise<void>> {
   const window = getCurrentWindow();
+  const configurationWindow = await Window.getByLabel('configuration');
   const statusShortcut = config.statusShortcut || DEFAULT_STATUS_SHORTCUT;
   const visibilityShortcut = config.visibilityShortcut || DEFAULT_VISIBILITY_SHORTCUT;
-  const shortcuts = [visibilityShortcut, ...(client.canControl ? [statusShortcut] : [])];
+  const registered: string[] = [];
 
-  let keyDown = false;
   try {
-    await register(shortcuts, (event) => {
-      if (event.state === 'Released') {
-        keyDown = false;
-      } else if (!keyDown) {
-        keyDown = true;
-        if (event.shortcut === statusShortcut) client.toggle();
-        else void window.isVisible().then((visible) => (visible ? window.hide() : window.show()));
+    await register(visibilityShortcut, (event) => {
+      if (event.state === 'Pressed') {
+        void (configurationWindow?.isVisible() ?? Promise.resolve(false)).then((configurationOpen) => {
+          if (!configurationOpen) {
+            void window.isVisible().then((visible) => (visible ? window.hide() : window.show()));
+          }
+        });
       }
     });
+    registered.push(visibilityShortcut);
+    if (client.canControl) {
+      await register(statusShortcut, (event) => {
+        if (event.state === 'Pressed') {
+          void (configurationWindow?.isVisible() ?? Promise.resolve(false)).then((configurationOpen) => {
+            if (!configurationOpen) client.toggle();
+          });
+        }
+      });
+      registered.push(statusShortcut);
+    }
   } catch (error) {
-    console.error('[presence] shortcut registration failed', error);
-    return async () => {};
+    if (registered.length) await unregister(registered).catch(() => {});
+    throw new Error(
+      `The shortcuts could not be registered: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 
-  return () => unregister(shortcuts);
+  return () => unregister(registered);
 }
 
-async function statusIcon(red: boolean): Promise<Image | null> {
-  const icon = await defaultWindowIcon();
-  if (!icon || !red) return icon ?? null;
+async function createBusyIcon(icon: Image): Promise<Image> {
   const rgba = await icon.rgba();
   for (let index = 0; index < rgba.length; index += 4) {
     if (rgba[index + 1] > rgba[index] * 1.2 && rgba[index + 1] > rgba[index + 2] * 1.2) {
@@ -174,18 +192,21 @@ export async function createPresenceTray(client: PresenceClient): Promise<{
       await MenuItem.new({ id: 'quit', text: 'Quit', action: () => exit(0) }),
     ],
   });
-  const icon = await statusIcon(false);
+  const icon = await defaultWindowIcon();
   if (!icon) throw new Error('The application icon is unavailable.');
+  const busyIcon = await createBusyIcon(icon);
   let singleClickTimer: ReturnType<typeof setTimeout> | undefined;
+  let trayStatus: PresenceState['status'] | undefined;
   const tray = await TrayIcon.new({
     id: 'presence',
     icon,
     menu,
-    menuOnLeftClick: false,
+    showMenuOnLeftClick: false,
     tooltip: 'Presence Dot',
     action: (event) => {
-      if (event.type === 'Click' && event.button === 'Left') {
-        if (client.canControl) singleClickTimer = setTimeout(() => client.toggle(), 250);
+      if (event.type === 'Click' && event.button === 'Left' && event.buttonState === 'Up') {
+        clearTimeout(singleClickTimer);
+        if (client.canControl) singleClickTimer = setTimeout(() => client.toggle(), 400);
       } else if (event.type === 'DoubleClick' && event.button === 'Left') {
         clearTimeout(singleClickTimer);
         void showDesktopConfiguration();
@@ -195,13 +216,18 @@ export async function createPresenceTray(client: PresenceClient): Promise<{
 
   return {
     update: async (state) => {
-      await Promise.all([
+      const updates = [
         status.setText(`Status: ${state.status === 'available' ? 'Available' : 'Busy'}`),
         connection.setText(
           `Connection: ${state.connection === 'connected' ? 'Connected' : 'Reconnecting'}`,
         ),
-        tray.setIcon(await statusIcon(state.status === 'busy')),
-      ]);
+        tray.setTooltip(`Presence Light — ${state.status === 'available' ? 'Available' : 'Busy'}`),
+      ];
+      if (state.status !== trayStatus) {
+        trayStatus = state.status;
+        updates.push(tray.setIcon(state.status === 'busy' ? busyIcon : icon));
+      }
+      await Promise.all(updates);
     },
     close: async () => {
       clearTimeout(singleClickTimer);

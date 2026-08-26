@@ -17,17 +17,33 @@
   let animations = true;
   let opacity = 1;
   let dotSize = 22;
-  let statusShortcut = 'CommandOrControl+Shift+P';
-  let visibilityShortcut = 'CommandOrControl+Shift+O';
+  let statusShortcut = 'CommandOrControl+Shift+KeyP';
+  let visibilityShortcut = 'CommandOrControl+Shift+KeyO';
   let configured = false;
+  let configuredAtOpen = false;
+  let overlayWasVisibleAtOpen = true;
+  let loaded = false;
   let busy = false;
   let error = '';
+  let saveTimer: ReturnType<typeof setTimeout> | undefined;
+  let pendingConfiguration: Configuration | undefined;
+  let saveRunning = false;
+  let lastSaved = '';
 
   onMount(() => {
     const window = getCurrentWindow();
     const unlisten = window.onCloseRequested((event) => {
       event.preventDefault();
-      void hideDesktopConfiguration();
+      const keepOverlayVisible = !configuredAtOpen && configured;
+      configuredAtOpen = configured;
+      void hideDesktopConfiguration(!keepOverlayVisible && !overlayWasVisibleAtOpen);
+    });
+    const unlistenOpened = window.listen<boolean>('configuration-opened', ({ payload }) => {
+      configuredAtOpen = configured;
+      overlayWasVisibleAtOpen = payload;
+    });
+    const unlistenDesktopError = window.listen<string>('desktop-error', ({ payload }) => {
+      error = payload;
     });
 
     void getDesktopConfig()
@@ -42,27 +58,67 @@
         statusShortcut = configuration.statusShortcut;
         visibilityShortcut = configuration.visibilityShortcut;
         configured = configuration.configured;
+        configuredAtOpen = configuration.configured;
+        lastSaved = JSON.stringify({
+          workerUrl,
+          token,
+          canControl,
+          autostart,
+          animations,
+          opacity,
+          dotSize,
+          statusShortcut,
+          visibilityShortcut,
+        });
+        loaded = true;
       })
       .catch((cause) => {
         error = cause instanceof Error ? cause.message : String(cause);
       });
 
-    return () => void unlisten.then((stop) => stop());
+    return () => {
+      clearTimeout(saveTimer);
+      void unlisten.then((stop) => stop());
+      void unlistenOpened.then((stop) => stop());
+      void unlistenDesktopError.then((stop) => stop());
+    };
   });
 
-  async function save(configuration: Configuration): Promise<void> {
+  function scheduleSave(configuration: Configuration): void {
+    const signature = JSON.stringify(configuration);
+    if (signature === lastSaved && !saveRunning) {
+      pendingConfiguration = undefined;
+      clearTimeout(saveTimer);
+      busy = false;
+      error = '';
+      return;
+    }
+    pendingConfiguration = configuration;
     busy = true;
     error = '';
-    try {
-      await saveDesktopConfig(configuration);
-      configured = true;
-      await getCurrentWindow().emitTo('overlay', 'configuration-saved');
-      await hideDesktopConfiguration();
-      busy = false;
-    } catch (cause) {
-      error = cause instanceof Error ? cause.message : String(cause);
-      busy = false;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => void flushSaves(), 450);
+  }
+
+  async function flushSaves(): Promise<void> {
+    if (saveRunning) return;
+    saveRunning = true;
+    while (pendingConfiguration) {
+      const configuration = pendingConfiguration;
+      pendingConfiguration = undefined;
+      const signature = JSON.stringify(configuration);
+      if (signature === lastSaved) continue;
+      try {
+        await saveDesktopConfig(configuration);
+        lastSaved = signature;
+        configured = true;
+        await getCurrentWindow().emitTo('overlay', 'configuration-saved', configuration);
+      } catch (cause) {
+        error = cause instanceof Error ? cause.message : String(cause);
+      }
     }
+    busy = false;
+    saveRunning = false;
   }
 
   function preview(appearance: Pick<Configuration, 'animations' | 'opacity' | 'dotSize'>): void {
@@ -80,6 +136,7 @@
       </div>
     </header>
 
+    {#if loaded}
     <ConfigurationForm
       bind:workerUrl
       bind:token
@@ -92,13 +149,18 @@
       bind:visibilityShortcut
       showRole
       showAutostart
-      showAppearance={configured}
+      showAppearance
+      autoSave
       {busy}
       {error}
-      buttonLabel={configured ? 'Save Config' : 'Finish setup'}
       onPreview={preview}
-      onSave={save}
+      onSave={scheduleSave}
     />
+    {:else if error}
+      <p class="load-error" role="alert">{error}</p>
+    {:else}
+      <p class="loading">Loading settings…</p>
+    {/if}
   </section>
 </main>
 
@@ -118,14 +180,14 @@
   section {
     width: 100%;
     min-height: 100vh;
-    padding: 18px clamp(18px, 4vw, 28px);
+    padding: 26px clamp(22px, 4vw, 38px);
   }
 
   header {
     display: flex;
     gap: 13px;
     align-items: flex-start;
-    margin-bottom: 14px;
+    margin-bottom: 22px;
   }
 
   .mark {
@@ -153,5 +215,15 @@
     color: #a1a1aa;
     font-size: 0.82rem;
     line-height: 1.5;
+  }
+
+  .loading,
+  .load-error {
+    margin-top: 30px;
+    color: #a1a1aa;
+  }
+
+  .load-error {
+    color: #fecaca;
   }
 </style>

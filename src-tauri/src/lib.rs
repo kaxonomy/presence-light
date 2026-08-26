@@ -6,10 +6,11 @@ use std::{
     sync::{Mutex, OnceLock},
     time::{SystemTime, UNIX_EPOCH},
 };
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tauri_plugin_autostart::ManagerExt;
 
 static DEBUG_LOG: OnceLock<Mutex<File>> = OnceLock::new();
+static CONFIG_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -39,8 +40,8 @@ impl Default for SavedConfig {
             animations: true,
             opacity: 1.0,
             dot_size: 22,
-            status_shortcut: "CommandOrControl+Shift+P".into(),
-            visibility_shortcut: "CommandOrControl+Shift+O".into(),
+            status_shortcut: "CommandOrControl+Shift+KeyP".into(),
+            visibility_shortcut: "CommandOrControl+Shift+KeyO".into(),
             position_x: None,
             position_y: None,
         }
@@ -65,7 +66,7 @@ struct DesktopConfig {
     start_minimized: bool,
 }
 
-fn config_path() -> Result<PathBuf, String> {
+fn legacy_config_path() -> Result<PathBuf, String> {
     std::env::current_exe()
         .map_err(|error| format!("The application cannot find its executable: {error}"))?
         .parent()
@@ -73,8 +74,25 @@ fn config_path() -> Result<PathBuf, String> {
         .ok_or_else(|| "The application cannot find the configuration directory.".to_string())
 }
 
-fn load_config() -> Result<SavedConfig, String> {
-    let path = config_path()?;
+fn config_path(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_config_dir()
+        .map(|directory| directory.join("settings.yml"))
+        .map_err(|error| {
+            format!("The application cannot find its configuration directory: {error}")
+        })
+}
+
+fn load_config(app: &AppHandle) -> Result<SavedConfig, String> {
+    let current_path = config_path(app)?;
+    let legacy_path = legacy_config_path()?;
+    let path = if current_path.exists() {
+        current_path
+    } else if legacy_path.exists() {
+        legacy_path
+    } else {
+        current_path
+    };
     if path.exists() {
         let text = fs::read_to_string(&path)
             .map_err(|error| format!("The application cannot read {}: {error}", path.display()))?;
@@ -95,8 +113,16 @@ fn load_config() -> Result<SavedConfig, String> {
     })
 }
 
-fn write_config(config: &SavedConfig) -> Result<(), String> {
-    let path = config_path()?;
+fn write_config(app: &AppHandle, config: &SavedConfig) -> Result<(), String> {
+    let path = config_path(app)?;
+    if let Some(directory) = path.parent() {
+        fs::create_dir_all(directory).map_err(|error| {
+            format!(
+                "The application cannot create {}: {error}",
+                directory.display()
+            )
+        })?;
+    }
     let text = serde_yaml::to_string(config)
         .map_err(|error| format!("The application cannot create the configuration: {error}"))?;
     fs::write(&path, text)
@@ -115,10 +141,13 @@ fn write_debug_log(level: &str, message: &str) {
     }
 }
 
-fn init_debug_log() {
-    let Ok(path) = config_path().map(|path| path.with_file_name("latest.txt")) else {
+fn init_debug_log(app: &AppHandle) {
+    let Ok(path) = config_path(app).map(|path| path.with_file_name("latest.txt")) else {
         return;
     };
+    if let Some(directory) = path.parent() {
+        let _ = fs::create_dir_all(directory);
+    }
     let Ok(file) = OpenOptions::new()
         .create(true)
         .truncate(true)
@@ -144,9 +173,19 @@ fn valid_worker_url(value: &str) -> bool {
         .is_some_and(|address| !address.trim().is_empty())
 }
 
+fn parse_shortcut(value: &str) -> Result<tauri_plugin_global_shortcut::Shortcut, String> {
+    value
+        .trim()
+        .parse()
+        .map_err(|error| format!("Choose a valid shortcut: {error}"))
+}
+
 #[tauri::command]
 fn desktop_config(app: AppHandle) -> Result<DesktopConfig, String> {
-    let config = load_config()?;
+    let _lock = CONFIG_LOCK
+        .lock()
+        .map_err(|_| "The configuration lock is unavailable.".to_string())?;
+    let config = load_config(&app)?;
     let configured = valid_worker_url(&config.worker_url) && !config.token.trim().is_empty();
     let autostart = app.autolaunch().is_enabled().unwrap_or(config.autostart);
 
@@ -197,7 +236,9 @@ fn save_desktop_config(
     if status_shortcut.trim().is_empty() || visibility_shortcut.trim().is_empty() {
         return Err("Choose both shortcuts.".to_string());
     }
-    if can_control && status_shortcut == visibility_shortcut {
+    let parsed_status_shortcut = parse_shortcut(&status_shortcut)?;
+    let parsed_visibility_shortcut = parse_shortcut(&visibility_shortcut)?;
+    if can_control && parsed_status_shortcut.id() == parsed_visibility_shortcut.id() {
         return Err("Choose different shortcuts for status and visibility.".to_string());
     }
 
@@ -212,28 +253,37 @@ fn save_desktop_config(
         .map_err(|error| format!("The application cannot change the startup option: {error}"))?;
     }
 
-    let previous = load_config()?;
-    write_config(&SavedConfig {
-        worker_url,
-        token,
-        can_control,
-        autostart,
-        animations,
-        opacity,
-        dot_size,
-        status_shortcut,
-        visibility_shortcut,
-        position_x: previous.position_x,
-        position_y: previous.position_y,
-    })
+    let _lock = CONFIG_LOCK
+        .lock()
+        .map_err(|_| "The configuration lock is unavailable.".to_string())?;
+    let previous = load_config(&app)?;
+    write_config(
+        &app,
+        &SavedConfig {
+            worker_url,
+            token,
+            can_control,
+            autostart,
+            animations,
+            opacity,
+            dot_size,
+            status_shortcut,
+            visibility_shortcut,
+            position_x: previous.position_x,
+            position_y: previous.position_y,
+        },
+    )
 }
 
 #[tauri::command]
-fn save_overlay_position(position_x: i32, position_y: i32) -> Result<(), String> {
-    let mut config = load_config()?;
+fn save_overlay_position(app: AppHandle, position_x: i32, position_y: i32) -> Result<(), String> {
+    let _lock = CONFIG_LOCK
+        .lock()
+        .map_err(|_| "The configuration lock is unavailable.".to_string())?;
+    let mut config = load_config(&app)?;
     config.position_x = Some(position_x);
     config.position_y = Some(position_y);
-    write_config(&config)
+    write_config(&app, &config)
 }
 
 #[tauri::command]
@@ -243,7 +293,6 @@ fn debug_log(level: String, message: String) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    init_debug_log();
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_autostart::init(
@@ -252,6 +301,7 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
+            init_debug_log(app.handle());
             #[cfg(target_os = "macos")]
             app.handle()
                 .set_activation_policy(tauri::ActivationPolicy::Accessory)?;
@@ -300,6 +350,10 @@ mod tests {
         assert_eq!(config.opacity, 0.75);
         assert_eq!(config.dot_size, 30);
         assert_eq!(config.status_shortcut, "CommandOrControl+Shift+P");
+        assert_eq!(
+            parse_shortcut("CommandOrControl+Shift+P").unwrap().id(),
+            parse_shortcut("CommandOrControl+Shift+KeyP").unwrap().id()
+        );
         assert_eq!(config.position_x, Some(20));
         assert!(!config.can_control);
 
@@ -308,6 +362,6 @@ mod tests {
         assert!(legacy.animations);
         assert_eq!(legacy.opacity, 1.0);
         assert_eq!(legacy.dot_size, 22);
-        assert_eq!(legacy.visibility_shortcut, "CommandOrControl+Shift+O");
+        assert_eq!(legacy.visibility_shortcut, "CommandOrControl+Shift+KeyO");
     }
 }

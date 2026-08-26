@@ -8,7 +8,6 @@
     opacity = 1,
     size = 22,
     pulsing = false,
-    onPulseEnd,
   }: {
     status: PresenceStatus;
     label?: boolean;
@@ -16,7 +15,6 @@
     opacity?: number;
     size?: number;
     pulsing?: boolean;
-    onPulseEnd?: () => void;
   } = $props();
 </script>
 
@@ -26,7 +24,6 @@
   class:pulsing={animated && pulsing}
   class="presence-dot"
   style:opacity;--dot-size={`${size}px`}
-  onanimationend={onPulseEnd}
   role="status"
   aria-label={label ? `Presence: ${status}` : undefined}
   aria-hidden={!label}
@@ -56,10 +53,10 @@
   }
 
   .presence-dot.pulsing::after {
-    animation: pulse 1.8s ease-out;
+    animation: pulse 1.8s ease-out infinite;
   }
 
-  .presence-dot:not(.animated)::after {
+  .presence-dot:not(.pulsing)::after {
     display: none;
   }
 

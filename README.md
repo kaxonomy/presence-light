@@ -57,4 +57,4 @@ The macOS transparent window uses Tauri private APIs. As a result, the macOS bui
 
 Linux desktop behavior depends on the compositor. Validate the global shortcut, click-through window, tray, and always-on-top behavior on each target desktop. Some Wayland compositors can restrict these features.
 
-The tray menu works on Linux. Tauri does not support Linux tray-icon mouse events, but this application does not use those events.
+The tray menu works on Linux. Tauri does not support tray-icon clicks on Linux. Use the tray menu or shortcuts on Linux.

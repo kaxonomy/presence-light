@@ -23,6 +23,7 @@
   let opacity = 1;
   let dotSize = 22;
   let pulsing = false;
+  let pulseId = 0;
   let setupError = '';
   const window = getCurrentWindow();
   let moving = false;
@@ -40,13 +41,23 @@
     pulsing = false;
   }
 
+  function interact(event: PointerEvent): void {
+    acknowledge();
+    startMoving(event);
+  }
+
   onMount(() => {
     let client: PresenceClient | undefined;
     let cleanup: Array<() => void | Promise<void>> = [];
     let disposed = false;
     let moveTimer: ReturnType<typeof setTimeout> | undefined;
+    let activeConfig: Awaited<ReturnType<typeof getDesktopConfig>> | undefined;
+    let initialized = false;
+    let resetRunning = false;
+    let resetQueued = false;
 
     async function reset(): Promise<void> {
+      const wasVisible = await window.isVisible().catch(() => false);
       client?.stop();
       for (const dispose of cleanup.reverse()) {
         try {
@@ -66,14 +77,28 @@
         client = createPresenceClient(config.workerUrl, config.token, config.canControl);
         let firstState = true;
         cleanup.push(client.store.subscribe((next) => {
-          if (!firstState && next.status !== state.status) pulsing = animations;
+          if (!firstState && next.status !== state.status) {
+            pulseId += 1;
+            pulsing = animations;
+          }
           state = next;
           firstState = false;
         }));
         if (config.configured) client.start();
-        if (!config.configured) await showDesktopConfiguration();
-        else if (!config.startMinimized) await prepareOverlay(config.positionX, config.positionY);
-        cleanup.push(await registerPresenceShortcuts(client, config));
+        if (!config.configured) {
+          await showDesktopConfiguration();
+          await prepareOverlay(config.positionX, config.positionY);
+        }
+        else if ((!initialized || !activeConfig?.configured) ? !config.startMinimized : wasVisible) {
+          await prepareOverlay(config.positionX, config.positionY);
+        }
+        try {
+          cleanup.push(await registerPresenceShortcuts(client, config));
+        } catch (error) {
+          setupError = error instanceof Error ? error.message : String(error);
+          console.error('[presence] shortcut setup failed', error);
+          void window.emitTo('configuration', 'desktop-error', setupError);
+        }
         try {
           const tray = await createPresenceTray(client);
           cleanup.push(() => tray.close());
@@ -81,6 +106,8 @@
         } catch (error) {
           console.error('[presence] tray setup failed', error);
         }
+        activeConfig = config;
+        initialized = true;
       } catch (error) {
         setupError = error instanceof Error ? error.message : String(error);
         console.error('[presence] desktop setup failed', error);
@@ -92,12 +119,37 @@
       }
     }
 
-    void reset();
-    const stopRefresh = listen('configuration-saved', () => void reset());
+    async function queueReset(): Promise<void> {
+      if (resetRunning) {
+        resetQueued = true;
+        return;
+      }
+      resetRunning = true;
+      do {
+        resetQueued = false;
+        await reset();
+      } while (resetQueued && !disposed);
+      resetRunning = false;
+    }
+
+    void queueReset();
+    const stopRefresh = listen<import('../components/ConfigurationForm.svelte').Configuration>(
+      'configuration-saved',
+      ({ payload }) => {
+        const needsReset = !activeConfig
+          || payload.workerUrl.trim() !== activeConfig.workerUrl
+          || payload.token.trim() !== activeConfig.token
+          || payload.canControl !== activeConfig.canControl
+          || payload.statusShortcut !== activeConfig.statusShortcut
+          || payload.visibilityShortcut !== activeConfig.visibilityShortcut;
+        if (needsReset) void queueReset();
+      },
+    );
     const stopPreview = listen<Pick<import('../components/ConfigurationForm.svelte').Configuration, 'animations' | 'opacity' | 'dotSize'>>(
       'configuration-preview',
       ({ payload }) => {
         animations = payload.animations;
+        if (!animations) acknowledge();
         opacity = payload.opacity;
         dotSize = payload.dotSize;
       },
@@ -132,10 +184,12 @@
     type="button"
     aria-label={setupError || `Acknowledge presence: ${state.status}`}
     title={setupError || `Presence: ${state.status}`}
-    onpointerdown={startMoving}
+    onpointerdown={interact}
     onclick={acknowledge}
   >
-    <PresenceDot status={state.status} animated={animations} {opacity} size={dotSize} {pulsing} onPulseEnd={acknowledge} />
+    {#key pulseId}
+      <PresenceDot status={state.status} animated={animations} {opacity} size={dotSize} {pulsing} />
+    {/key}
   </button>
 </main>
 
