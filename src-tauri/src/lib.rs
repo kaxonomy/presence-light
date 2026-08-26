@@ -1,15 +1,44 @@
 use serde::{Deserialize, Serialize};
-use std::{fs, path::PathBuf};
+use std::{
+    fs::{self, File, OpenOptions},
+    io::Write,
+    path::PathBuf,
+    sync::{Mutex, OnceLock},
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tauri::AppHandle;
 use tauri_plugin_autostart::ManagerExt;
 
-#[derive(Debug, Default, Deserialize, Serialize)]
+static DEBUG_LOG: OnceLock<Mutex<File>> = OnceLock::new();
+
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 struct SavedConfig {
     worker_url: String,
     token: String,
     can_control: bool,
     autostart: bool,
+    animations: bool,
+    opacity: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    position_x: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    position_y: Option<i32>,
+}
+
+impl Default for SavedConfig {
+    fn default() -> Self {
+        Self {
+            worker_url: String::new(),
+            token: String::new(),
+            can_control: false,
+            autostart: false,
+            animations: true,
+            opacity: 1.0,
+            position_x: None,
+            position_y: None,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -19,6 +48,10 @@ struct DesktopConfig {
     token: String,
     can_control: bool,
     autostart: bool,
+    animations: bool,
+    opacity: f64,
+    position_x: Option<i32>,
+    position_y: Option<i32>,
     configured: bool,
     start_minimized: bool,
 }
@@ -49,8 +82,50 @@ fn load_config() -> Result<SavedConfig, String> {
         token: std::env::var("PRESENCE_TOKEN").unwrap_or_default(),
         can_control: std::env::var("CAN_CONTROL")
             .is_ok_and(|value| value.eq_ignore_ascii_case("true")),
-        autostart: false,
+        ..SavedConfig::default()
     })
+}
+
+fn write_config(config: &SavedConfig) -> Result<(), String> {
+    let path = config_path()?;
+    let text = serde_yaml::to_string(config)
+        .map_err(|error| format!("The application cannot create the configuration: {error}"))?;
+    fs::write(&path, text)
+        .map_err(|error| format!("The application cannot write {}: {error}", path.display()))
+}
+
+fn write_debug_log(level: &str, message: &str) {
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_secs());
+    if let Some(log) = DEBUG_LOG.get() {
+        if let Ok(mut file) = log.try_lock() {
+            let _ = writeln!(file, "{timestamp} [{level}] {message}");
+            let _ = file.flush();
+        }
+    }
+}
+
+fn init_debug_log() {
+    let Ok(path) = config_path().map(|path| path.with_file_name("latest.txt")) else {
+        return;
+    };
+    let Ok(file) = OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(path)
+    else {
+        return;
+    };
+    let _ = DEBUG_LOG.set(Mutex::new(file));
+    write_debug_log("INFO", "Presence Light started");
+
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic| {
+        write_debug_log("PANIC", &panic.to_string());
+        previous_hook(panic);
+    }));
 }
 
 fn valid_worker_url(value: &str) -> bool {
@@ -71,6 +146,10 @@ fn desktop_config(app: AppHandle) -> Result<DesktopConfig, String> {
         token: config.token,
         can_control: config.can_control,
         autostart,
+        animations: config.animations,
+        opacity: config.opacity,
+        position_x: config.position_x,
+        position_y: config.position_y,
         configured,
         start_minimized: std::env::args().any(|argument| argument == "--minimized"),
     })
@@ -83,6 +162,8 @@ fn save_desktop_config(
     token: String,
     can_control: bool,
     autostart: bool,
+    animations: bool,
+    opacity: f64,
 ) -> Result<(), String> {
     let worker_url = worker_url.trim().to_string();
     let token = token.trim().to_string();
@@ -92,29 +173,51 @@ fn save_desktop_config(
     if token.is_empty() {
         return Err("Enter the private token for this device.".to_string());
     }
-
-    if autostart {
-        app.autolaunch().enable()
-    } else {
-        app.autolaunch().disable()
+    if !opacity.is_finite() || !(0.1..=1.0).contains(&opacity) {
+        return Err("Choose an opacity from 10% to 100%.".to_string());
     }
-    .map_err(|error| format!("The application cannot change the startup option: {error}"))?;
 
-    let path = config_path()?;
-    let text = serde_yaml::to_string(&SavedConfig {
+    let autolaunch = app.autolaunch();
+    let current_autostart = autolaunch.is_enabled().unwrap_or(false);
+    if autostart != current_autostart {
+        if autostart {
+            autolaunch.enable()
+        } else {
+            autolaunch.disable()
+        }
+        .map_err(|error| format!("The application cannot change the startup option: {error}"))?;
+    }
+
+    let previous = load_config()?;
+    write_config(&SavedConfig {
         worker_url,
         token,
         can_control,
         autostart,
+        animations,
+        opacity,
+        position_x: previous.position_x,
+        position_y: previous.position_y,
     })
-    .map_err(|error| format!("The application cannot create the configuration: {error}"))?;
-    fs::write(&path, text)
-        .map_err(|error| format!("The application cannot write {}: {error}", path.display()))
+}
+
+#[tauri::command]
+fn save_overlay_position(position_x: i32, position_y: i32) -> Result<(), String> {
+    let mut config = load_config()?;
+    config.position_x = Some(position_x);
+    config.position_y = Some(position_y);
+    write_config(&config)
+}
+
+#[tauri::command]
+fn debug_log(level: String, message: String) {
+    write_debug_log(&level, &message);
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    init_debug_log();
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
             app.handle().plugin(tauri_plugin_autostart::init(
@@ -130,10 +233,17 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             desktop_config,
-            save_desktop_config
+            save_desktop_config,
+            save_overlay_position,
+            debug_log
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Presence Light");
+        .build(tauri::generate_context!())
+        .expect("error while building Presence Light");
+    app.run(|_, event| {
+        if matches!(event, tauri::RunEvent::Exit) {
+            write_debug_log("INFO", "Presence Light stopped");
+        }
+    });
 }
 
 #[cfg(test)]
@@ -147,12 +257,24 @@ mod tests {
             token: "secret".into(),
             can_control: false,
             autostart: true,
+            animations: true,
+            opacity: 0.75,
+            position_x: Some(20),
+            position_y: Some(30),
         })
         .unwrap();
         let config: SavedConfig = serde_yaml::from_str(&text).unwrap();
 
         assert!(valid_worker_url(&config.worker_url));
         assert!(config.autostart);
+        assert!(config.animations);
+        assert_eq!(config.opacity, 0.75);
+        assert_eq!(config.position_x, Some(20));
         assert!(!config.can_control);
+
+        let legacy: SavedConfig =
+            serde_yaml::from_str("workerUrl: wss://example.com\ntoken: secret\n").unwrap();
+        assert!(legacy.animations);
+        assert_eq!(legacy.opacity, 1.0);
     }
 }

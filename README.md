@@ -8,13 +8,11 @@ Open the controller page. Then enter the Worker WebSocket URL and the controller
 
 The browser stores the configuration in local storage. The token does not enter the Vite build or the source code.
 
-Open **Configuration…** from the desktop tray menu. Enter the Worker WebSocket URL and the token for that device.
+Choose **Controller** only for a device that can change the status. The Worker must enforce authorization.
 
-The desktop application stores the configuration in `config.yml`. This file is next to the executable.
+Select **Auto launch on startup** to register the desktop application for startup. An automatic start keeps the dot hidden.
 
-Select **Let this device change the status** only for a controller device. The Worker must enforce authorization.
-
-Select **Start with this computer** to register the desktop application for startup. An automatic start keeps the dot hidden.
+After setup, use **Edit config.yml…** from the tray to update the connection and dot appearance.
 
 Both clients add the token as the `token` query parameter. The Worker must accept this token format.
 
@@ -42,7 +40,7 @@ Start the desktop application:
 pnpm tauri dev
 ```
 
-The configuration window opens when `config.yml` does not exist.
+The setup window opens when the desktop application is not configured.
 
 ## Checks and builds
 

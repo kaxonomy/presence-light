@@ -17,6 +17,10 @@ export type DesktopConfig = {
   token: string;
   canControl: boolean;
   autostart: boolean;
+  animations: boolean;
+  opacity: number;
+  positionX: number | null;
+  positionY: number | null;
   configured: boolean;
   startMinimized: boolean;
 };
@@ -30,8 +34,14 @@ export async function saveDesktopConfig(configuration: {
   token: string;
   canControl: boolean;
   autostart: boolean;
+  animations: boolean;
+  opacity: number;
 }): Promise<void> {
   return invoke('save_desktop_config', configuration);
+}
+
+export async function saveOverlayPosition(positionX: number, positionY: number): Promise<void> {
+  return invoke('save_overlay_position', { positionX, positionY });
 }
 
 export async function showDesktopConfiguration(): Promise<void> {
@@ -39,13 +49,22 @@ export async function showDesktopConfiguration(): Promise<void> {
   if (!window) throw new Error('The configuration window is unavailable.');
   await window.show();
   await window.setFocus();
+  await (await Window.getByLabel('overlay'))?.setIgnoreCursorEvents(false);
 }
 
-export async function prepareOverlay(): Promise<void> {
+export async function hideDesktopConfiguration(): Promise<void> {
+  await getCurrentWindow().hide();
+  await (await Window.getByLabel('overlay'))?.setIgnoreCursorEvents(true);
+}
+
+export async function prepareOverlay(positionX: number | null, positionY: number | null): Promise<void> {
   const window = getCurrentWindow();
   try {
-    const monitor = await primaryMonitor();
-    if (monitor) {
+    if (positionX !== null && positionY !== null) {
+      await window.setPosition(new PhysicalPosition(positionX, positionY));
+    } else {
+      const monitor = await primaryMonitor();
+      if (!monitor) throw new Error('No primary monitor is available.');
       const { position, size } = monitor.workArea;
       const scale = monitor.scaleFactor;
       await window.setPosition(
@@ -115,7 +134,7 @@ export async function createPresenceTray(client: PresenceClient): Promise<{
       await PredefinedMenuItem.new({ item: 'Separator' }),
       await MenuItem.new({
         id: 'configuration',
-        text: 'Configuration…',
+        text: 'Edit config.yml…',
         action: () => void showDesktopConfiguration(),
       }),
       await MenuItem.new({ id: 'show', text: 'Show Dot', action: () => window.show() }),

@@ -97,6 +97,8 @@
         bind:token={tokenInput}
         canControl={true}
         autostart={false}
+        animations={true}
+        opacity={1}
         onSave={save}
       />
       {#if workerUrl && token}

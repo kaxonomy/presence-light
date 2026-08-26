@@ -1,13 +1,20 @@
 <script lang="ts">
   import type { PresenceStatus } from '../lib/presence/protocol';
 
-  let { status, label = true }: { status: PresenceStatus; label?: boolean } = $props();
+  let {
+    status,
+    label = true,
+    animated = true,
+    opacity = 1,
+  }: { status: PresenceStatus; label?: boolean; animated?: boolean; opacity?: number } = $props();
 </script>
 
 <div
   class:available={status === 'available'}
   class:busy={status === 'busy'}
+  class:animated
   class="presence-dot"
+  style:opacity
   role="status"
   aria-label={label ? `Presence: ${status}` : undefined}
   aria-hidden={!label}
@@ -34,7 +41,14 @@
     border: 2px solid var(--dot-color);
     border-radius: inherit;
     content: '';
+  }
+
+  .presence-dot.animated::after {
     animation: pulse 1.8s ease-out infinite;
+  }
+
+  .presence-dot:not(.animated)::after {
+    display: none;
   }
 
   .available {
@@ -63,4 +77,3 @@
     }
   }
 </style>
-
