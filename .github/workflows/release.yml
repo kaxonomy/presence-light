@@ -1,6 +1,11 @@
 name: Release
 
 on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to release
+        required: true
   push:
     tags: ["v*"]
 
@@ -46,9 +51,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: Presence Light ${{ github.ref_name }}
+          tagName: ${{ inputs.tag || github.ref_name }}
+          releaseName: Presence Light ${{ inputs.tag || github.ref_name }}
           releaseBody: Download the installer for your operating system below.
           releaseDraft: false
           prerelease: false
+          releaseAssetNamePattern: "[name]-[platform]-[arch][setup][ext]"
           args: ${{ matrix.args }}
