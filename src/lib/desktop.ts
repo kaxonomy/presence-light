@@ -9,8 +9,8 @@ import { exit } from '@tauri-apps/plugin-process';
 import type { PresenceClient } from './presence/client';
 import type { PresenceState } from './presence/store';
 
-const STATUS_SHORTCUT = 'Control+Shift+P';
-const VISIBILITY_SHORTCUT = 'Control+Shift+O';
+const DEFAULT_STATUS_SHORTCUT = 'CommandOrControl+Shift+P';
+const DEFAULT_VISIBILITY_SHORTCUT = 'CommandOrControl+Shift+O';
 const OVERLAY_MARGIN = 24;
 const OVERLAY_SIZE = 64;
 
@@ -22,6 +22,8 @@ export type DesktopConfig = {
   animations: boolean;
   opacity: number;
   dotSize: number;
+  statusShortcut: string;
+  visibilityShortcut: string;
   positionX: number | null;
   positionY: number | null;
   configured: boolean;
@@ -40,6 +42,8 @@ export async function saveDesktopConfig(configuration: {
   animations: boolean;
   opacity: number;
   dotSize: number;
+  statusShortcut: string;
+  visibilityShortcut: string;
 }): Promise<void> {
   return invoke('save_desktop_config', configuration);
 }
@@ -58,7 +62,7 @@ export async function showDesktopConfiguration(): Promise<void> {
 
 export async function hideDesktopConfiguration(): Promise<void> {
   await getCurrentWindow().hide();
-  await (await Window.getByLabel('overlay'))?.setIgnoreCursorEvents(true);
+  await (await Window.getByLabel('overlay'))?.setIgnoreCursorEvents(false);
 }
 
 export async function prepareOverlay(positionX: number | null, positionY: number | null): Promise<void> {
@@ -81,13 +85,18 @@ export async function prepareOverlay(positionX: number | null, positionY: number
   } catch (error) {
     console.warn('[presence] overlay positioning failed', error);
   }
-  await window.setIgnoreCursorEvents(true);
+  await window.setIgnoreCursorEvents(false);
   await window.show();
 }
 
-export async function registerPresenceShortcuts(client: PresenceClient): Promise<() => Promise<void>> {
+export async function registerPresenceShortcuts(
+  client: PresenceClient,
+  config: Pick<DesktopConfig, 'statusShortcut' | 'visibilityShortcut'>,
+): Promise<() => Promise<void>> {
   const window = getCurrentWindow();
-  const shortcuts = [VISIBILITY_SHORTCUT, ...(client.canControl ? [STATUS_SHORTCUT] : [])];
+  const statusShortcut = config.statusShortcut || DEFAULT_STATUS_SHORTCUT;
+  const visibilityShortcut = config.visibilityShortcut || DEFAULT_VISIBILITY_SHORTCUT;
+  const shortcuts = [visibilityShortcut, ...(client.canControl ? [statusShortcut] : [])];
 
   let keyDown = false;
   try {
@@ -96,7 +105,7 @@ export async function registerPresenceShortcuts(client: PresenceClient): Promise
         keyDown = false;
       } else if (!keyDown) {
         keyDown = true;
-        if (event.shortcut === STATUS_SHORTCUT) client.toggle();
+        if (event.shortcut === statusShortcut) client.toggle();
         else void window.isVisible().then((visible) => (visible ? window.hide() : window.show()));
       }
     });

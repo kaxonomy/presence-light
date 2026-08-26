@@ -7,6 +7,8 @@
     animations: boolean;
     opacity: number;
     dotSize: number;
+    statusShortcut: string;
+    visibilityShortcut: string;
   };
 
   type Props = Configuration & {
@@ -28,6 +30,8 @@
     animations = $bindable(true),
     opacity = $bindable(1),
     dotSize = $bindable(22),
+    statusShortcut = $bindable('CommandOrControl+Shift+P'),
+    visibilityShortcut = $bindable('CommandOrControl+Shift+O'),
     showRole = false,
     showAutostart = false,
     showAppearance = false,
@@ -38,6 +42,22 @@
     onSave,
   }: Props = $props();
   let inputError = $state('');
+  let capturing = $state<'status' | 'visibility' | null>(null);
+
+  function captureShortcut(event: KeyboardEvent): void {
+    if (!capturing || ['Control', 'Meta', 'Alt', 'Shift'].includes(event.key)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const parts = [
+      ...(event.ctrlKey || event.metaKey ? ['CommandOrControl'] : []),
+      ...(event.altKey ? ['Alt'] : []),
+      ...(event.shiftKey ? ['Shift'] : []),
+      event.key.length === 1 ? event.key.toUpperCase() : event.key,
+    ];
+    if (capturing === 'status') statusShortcut = parts.join('+');
+    else visibilityShortcut = parts.join('+');
+    capturing = null;
+  }
 
   function submit(): void {
     workerUrl = workerUrl.trim();
@@ -57,13 +77,15 @@
       return;
     }
 
-    void onSave({ workerUrl, token, canControl, autostart, animations, opacity, dotSize });
+    void onSave({ workerUrl, token, canControl, autostart, animations, opacity, dotSize, statusShortcut, visibilityShortcut });
   }
 
   $effect(() => {
     if (showAppearance) onPreview?.({ animations, opacity, dotSize });
   });
 </script>
+
+<svelte:window onkeydown={captureShortcut} />
 
 <form
   class:split={showAppearance}
@@ -147,6 +169,23 @@
         <input type="range" min="14" max="40" step="1" bind:value={dotSize} />
         <output>{dotSize}px</output>
       </label>
+      <div class="shortcuts">
+        <strong>Shortcuts</strong>
+        {#if canControl}
+          <label>
+            <span>Toggle status</span>
+            <button type="button" class="shortcut" onclick={() => (capturing = 'status')}>
+              {capturing === 'status' ? 'Press keys…' : statusShortcut}
+            </button>
+          </label>
+        {/if}
+        <label>
+          <span>Toggle visibility</span>
+          <button type="button" class="shortcut" onclick={() => (capturing = 'visibility')}>
+            {capturing === 'visibility' ? 'Press keys…' : visibilityShortcut}
+          </button>
+        </label>
+      </div>
     </div>
   {/if}
 
@@ -318,6 +357,31 @@
     grid-template-columns: auto 1fr 42px;
     gap: 10px;
     align-items: center;
+  }
+
+  .shortcuts {
+    display: grid;
+    gap: 8px;
+  }
+
+  .shortcuts label {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    align-items: center;
+    color: #d4d4d8;
+    font-size: 0.8rem;
+  }
+
+  button.shortcut {
+    width: auto;
+    padding: 6px 8px;
+    border: 1px solid #3f3f46;
+    border-radius: 7px;
+    color: #dbeafe;
+    background: #111114;
+    font-size: 0.75rem;
+    font-weight: 600;
   }
 
   @media (max-width: 560px) {

@@ -100,6 +100,8 @@
         animations={true}
         opacity={1}
         dotSize={22}
+        statusShortcut="CommandOrControl+Shift+P"
+        visibilityShortcut="CommandOrControl+Shift+O"
         onSave={save}
       />
       {#if workerUrl && token}

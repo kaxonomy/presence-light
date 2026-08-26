@@ -21,6 +21,8 @@ struct SavedConfig {
     animations: bool,
     opacity: f64,
     dot_size: u8,
+    status_shortcut: String,
+    visibility_shortcut: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     position_x: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -37,6 +39,8 @@ impl Default for SavedConfig {
             animations: true,
             opacity: 1.0,
             dot_size: 22,
+            status_shortcut: "CommandOrControl+Shift+P".into(),
+            visibility_shortcut: "CommandOrControl+Shift+O".into(),
             position_x: None,
             position_y: None,
         }
@@ -53,6 +57,8 @@ struct DesktopConfig {
     animations: bool,
     opacity: f64,
     dot_size: u8,
+    status_shortcut: String,
+    visibility_shortcut: String,
     position_x: Option<i32>,
     position_y: Option<i32>,
     configured: bool,
@@ -152,6 +158,8 @@ fn desktop_config(app: AppHandle) -> Result<DesktopConfig, String> {
         animations: config.animations,
         opacity: config.opacity,
         dot_size: config.dot_size,
+        status_shortcut: config.status_shortcut,
+        visibility_shortcut: config.visibility_shortcut,
         position_x: config.position_x,
         position_y: config.position_y,
         configured,
@@ -169,6 +177,8 @@ fn save_desktop_config(
     animations: bool,
     opacity: f64,
     dot_size: u8,
+    status_shortcut: String,
+    visibility_shortcut: String,
 ) -> Result<(), String> {
     let worker_url = worker_url.trim().to_string();
     let token = token.trim().to_string();
@@ -183,6 +193,12 @@ fn save_desktop_config(
     }
     if !(14..=40).contains(&dot_size) {
         return Err("Choose a dot size from 14px to 40px.".to_string());
+    }
+    if status_shortcut.trim().is_empty() || visibility_shortcut.trim().is_empty() {
+        return Err("Choose both shortcuts.".to_string());
+    }
+    if can_control && status_shortcut == visibility_shortcut {
+        return Err("Choose different shortcuts for status and visibility.".to_string());
     }
 
     let autolaunch = app.autolaunch();
@@ -205,6 +221,8 @@ fn save_desktop_config(
         animations,
         opacity,
         dot_size,
+        status_shortcut,
+        visibility_shortcut,
         position_x: previous.position_x,
         position_y: previous.position_y,
     })
@@ -268,6 +286,8 @@ mod tests {
             animations: true,
             opacity: 0.75,
             dot_size: 30,
+            status_shortcut: "CommandOrControl+Shift+P".into(),
+            visibility_shortcut: "CommandOrControl+Shift+O".into(),
             position_x: Some(20),
             position_y: Some(30),
         })
@@ -279,6 +299,7 @@ mod tests {
         assert!(config.animations);
         assert_eq!(config.opacity, 0.75);
         assert_eq!(config.dot_size, 30);
+        assert_eq!(config.status_shortcut, "CommandOrControl+Shift+P");
         assert_eq!(config.position_x, Some(20));
         assert!(!config.can_control);
 
@@ -287,5 +308,6 @@ mod tests {
         assert!(legacy.animations);
         assert_eq!(legacy.opacity, 1.0);
         assert_eq!(legacy.dot_size, 22);
+        assert_eq!(legacy.visibility_shortcut, "CommandOrControl+Shift+O");
     }
 }

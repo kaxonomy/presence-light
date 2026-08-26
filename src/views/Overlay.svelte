@@ -73,7 +73,7 @@
         if (config.configured) client.start();
         if (!config.configured) await showDesktopConfiguration();
         else if (!config.startMinimized) await prepareOverlay(config.positionX, config.positionY);
-        cleanup.push(await registerPresenceShortcuts(client));
+        cleanup.push(await registerPresenceShortcuts(client, config));
         try {
           const tray = await createPresenceTray(client);
           cleanup.push(() => tray.close());

@@ -17,6 +17,8 @@
   let animations = true;
   let opacity = 1;
   let dotSize = 22;
+  let statusShortcut = 'CommandOrControl+Shift+P';
+  let visibilityShortcut = 'CommandOrControl+Shift+O';
   let configured = false;
   let busy = false;
   let error = '';
@@ -37,6 +39,8 @@
         animations = configuration.animations;
         opacity = configuration.opacity;
         dotSize = configuration.dotSize;
+        statusShortcut = configuration.statusShortcut;
+        visibilityShortcut = configuration.visibilityShortcut;
         configured = configuration.configured;
       })
       .catch((cause) => {
@@ -84,6 +88,8 @@
       bind:animations
       bind:opacity
       bind:dotSize
+      bind:statusShortcut
+      bind:visibilityShortcut
       showRole
       showAutostart
       showAppearance={configured}
