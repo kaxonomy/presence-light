@@ -17,6 +17,8 @@
   let animations = true;
   let opacity = 1;
   let dotSize = 22;
+  let soundEnabled = true;
+  let soundVolume = 0.5;
   let statusShortcut = 'CommandOrControl+Shift+KeyP';
   let visibilityShortcut = 'CommandOrControl+Shift+KeyO';
   let configured = false;
@@ -55,6 +57,8 @@
         animations = configuration.animations;
         opacity = configuration.opacity;
         dotSize = configuration.dotSize;
+        soundEnabled = configuration.soundEnabled;
+        soundVolume = configuration.soundVolume;
         statusShortcut = configuration.statusShortcut;
         visibilityShortcut = configuration.visibilityShortcut;
         configured = configuration.configured;
@@ -67,6 +71,8 @@
           animations,
           opacity,
           dotSize,
+          soundEnabled,
+          soundVolume,
           statusShortcut,
           visibilityShortcut,
         });
@@ -121,7 +127,7 @@
     saveRunning = false;
   }
 
-  function preview(appearance: Pick<Configuration, 'animations' | 'opacity' | 'dotSize'>): void {
+  function preview(appearance: Pick<Configuration, 'animations' | 'opacity' | 'dotSize' | 'soundEnabled' | 'soundVolume'>): void {
     void getCurrentWindow().emitTo('overlay', 'configuration-preview', appearance);
   }
 </script>
@@ -145,6 +151,8 @@
       bind:animations
       bind:opacity
       bind:dotSize
+      bind:soundEnabled
+      bind:soundVolume
       bind:statusShortcut
       bind:visibilityShortcut
       showRole

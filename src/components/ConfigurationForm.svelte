@@ -9,6 +9,8 @@
     animations: boolean;
     opacity: number;
     dotSize: number;
+    soundEnabled: boolean;
+    soundVolume: number;
     statusShortcut: string;
     visibilityShortcut: string;
   };
@@ -21,7 +23,7 @@
     busy?: boolean;
     error?: string;
     buttonLabel?: string;
-    onPreview?: (appearance: Pick<Configuration, 'animations' | 'opacity' | 'dotSize'>) => void;
+    onPreview?: (appearance: Pick<Configuration, 'animations' | 'opacity' | 'dotSize' | 'soundEnabled' | 'soundVolume'>) => void;
     onSave: (configuration: Configuration) => void | Promise<void>;
   };
 
@@ -33,6 +35,8 @@
     animations = $bindable(true),
     opacity = $bindable(1),
     dotSize = $bindable(22),
+    soundEnabled = $bindable(true),
+    soundVolume = $bindable(0.5),
     statusShortcut = $bindable('CommandOrControl+Shift+KeyP'),
     visibilityShortcut = $bindable('CommandOrControl+Shift+KeyO'),
     showRole = false,
@@ -47,6 +51,7 @@
   }: Props = $props();
   let inputError = $state('');
   let capturing = $state<'status' | 'visibility' | null>(null);
+  let previewAudio: HTMLAudioElement | undefined;
 
   function captureShortcut(event: KeyboardEvent): void {
     if (!capturing) return;
@@ -79,9 +84,21 @@
       animations,
       opacity,
       dotSize,
+      soundEnabled,
+      soundVolume,
       statusShortcut,
       visibilityShortcut,
     };
+  }
+
+  function testSound(): void {
+    previewAudio ??= new Audio('/chime1.mp3');
+    previewAudio.volume = soundVolume;
+    previewAudio.currentTime = 0;
+    inputError = '';
+    void previewAudio.play().catch((cause) => {
+      inputError = `The test sound could not play: ${cause instanceof Error ? cause.message : String(cause)}`;
+    });
   }
 
   function submit(): void {
@@ -107,7 +124,14 @@
 
   $effect(() => {
     const current = configuration();
-    if (showAppearance) onPreview?.({ animations, opacity, dotSize });
+    if (previewAudio) {
+      previewAudio.volume = soundVolume;
+      if (!soundEnabled) {
+        previewAudio.pause();
+        previewAudio.currentTime = 0;
+      }
+    }
+    if (showAppearance) onPreview?.({ animations, opacity, dotSize, soundEnabled, soundVolume });
     if (autoSave) void onSave(current);
   });
 </script>
@@ -202,6 +226,30 @@
         <input type="range" min="14" max="40" step="1" bind:value={dotSize} />
         <output>{dotSize}px</output>
       </label>
+      <div class="sound-settings">
+        <label class="choice compact">
+          <input type="checkbox" bind:checked={soundEnabled} />
+          <span>
+            <strong>Busy chime</strong>
+            <small>Play a chime when the status changes to Busy.</small>
+          </span>
+        </label>
+        <label class="opacity" class:disabled={!soundEnabled}>
+          <span>Volume</span>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            bind:value={soundVolume}
+            disabled={!soundEnabled}
+          />
+          <output>{Math.round(soundVolume * 100)}%</output>
+        </label>
+        <button type="button" class="secondary" disabled={!soundEnabled} onclick={testSound}>
+          Test sound
+        </button>
+      </div>
       <div class="shortcuts">
         <strong>Shortcuts</strong>
         <small>Click a shortcut, then press the new keys together. Esc cancels.</small>
@@ -430,6 +478,25 @@
     border-top: 1px solid rgb(255 255 255 / 0.08);
   }
 
+  .sound-settings {
+    display: grid;
+    gap: 10px;
+    padding-top: 4px;
+    border-top: 1px solid rgb(255 255 255 / 0.08);
+  }
+
+  .opacity.disabled {
+    opacity: 0.5;
+  }
+
+  button.secondary {
+    padding: 7px 10px;
+    border: 1px solid #3f3f46;
+    color: #dbeafe;
+    background: #202026;
+    font-size: 0.8rem;
+  }
+
   .shortcuts label {
     display: grid;
     grid-template-columns: 1fr auto;
@@ -529,8 +596,13 @@
     cursor: pointer;
   }
 
-  button:disabled {
+  button[type='submit']:disabled {
     cursor: wait;
     opacity: 0.65;
+  }
+
+  button.secondary:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
   }
 </style>

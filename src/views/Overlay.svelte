@@ -22,6 +22,8 @@
   let animations = true;
   let opacity = 1;
   let dotSize = 22;
+  let soundEnabled = true;
+  let soundVolume = 0.5;
   let pulsing = false;
   let pulseId = 0;
   let setupError = '';
@@ -47,6 +49,8 @@
   }
 
   onMount(() => {
+    const chime = new Audio('/chime1.mp3');
+    chime.preload = 'auto';
     let client: PresenceClient | undefined;
     let cleanup: Array<() => void | Promise<void>> = [];
     let disposed = false;
@@ -74,15 +78,28 @@
         animations = config.animations;
         opacity = config.opacity;
         dotSize = config.dotSize;
+        soundEnabled = config.soundEnabled;
+        soundVolume = config.soundVolume;
+        chime.volume = soundVolume;
         client = createPresenceClient(config.workerUrl, config.token, config.canControl);
-        let firstState = true;
+        let synchronized = false;
         cleanup.push(client.store.subscribe((next) => {
-          if (!firstState && next.status !== state.status) {
+          if (!synchronized && next.updatedAt === null) {
+            state = { ...state, connection: next.connection };
+            return;
+          }
+          synchronized = true;
+          if (next.status !== state.status) {
             pulseId += 1;
             pulsing = animations;
+            if (next.status === 'busy' && soundEnabled) {
+              chime.currentTime = 0;
+              void chime.play().catch((error) =>
+                console.warn('[presence] busy chime failed', error),
+              );
+            }
           }
           state = next;
-          firstState = false;
         }));
         if (config.configured) client.start();
         if (!config.configured) {
@@ -145,13 +162,20 @@
         if (needsReset) void queueReset();
       },
     );
-    const stopPreview = listen<Pick<import('../components/ConfigurationForm.svelte').Configuration, 'animations' | 'opacity' | 'dotSize'>>(
+    const stopPreview = listen<Pick<import('../components/ConfigurationForm.svelte').Configuration, 'animations' | 'opacity' | 'dotSize' | 'soundEnabled' | 'soundVolume'>>(
       'configuration-preview',
       ({ payload }) => {
         animations = payload.animations;
         if (!animations) acknowledge();
         opacity = payload.opacity;
         dotSize = payload.dotSize;
+        soundEnabled = payload.soundEnabled;
+        soundVolume = payload.soundVolume;
+        chime.volume = soundVolume;
+        if (!soundEnabled) {
+          chime.pause();
+          chime.currentTime = 0;
+        }
       },
     );
     const stopMoved = window.onMoved(({ payload }) => {
@@ -168,6 +192,7 @@
     return () => {
       disposed = true;
       clearTimeout(moveTimer);
+      chime.pause();
       client?.stop();
       for (const dispose of cleanup.reverse()) void dispose();
       void stopRefresh.then((stop) => stop());

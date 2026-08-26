@@ -22,6 +22,8 @@ export type DesktopConfig = {
   animations: boolean;
   opacity: number;
   dotSize: number;
+  soundEnabled: boolean;
+  soundVolume: number;
   statusShortcut: string;
   visibilityShortcut: string;
   positionX: number | null;
@@ -42,6 +44,8 @@ export async function saveDesktopConfig(configuration: {
   animations: boolean;
   opacity: number;
   dotSize: number;
+  soundEnabled: boolean;
+  soundVolume: number;
   statusShortcut: string;
   visibilityShortcut: string;
 }): Promise<void> {

@@ -100,6 +100,8 @@
         animations={true}
         opacity={1}
         dotSize={22}
+        soundEnabled={true}
+        soundVolume={0.5}
         statusShortcut="CommandOrControl+Shift+KeyP"
         visibilityShortcut="CommandOrControl+Shift+KeyO"
         onSave={save}

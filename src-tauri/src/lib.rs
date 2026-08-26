@@ -22,6 +22,8 @@ struct SavedConfig {
     animations: bool,
     opacity: f64,
     dot_size: u8,
+    sound_enabled: bool,
+    sound_volume: f64,
     status_shortcut: String,
     visibility_shortcut: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -40,6 +42,8 @@ impl Default for SavedConfig {
             animations: true,
             opacity: 1.0,
             dot_size: 22,
+            sound_enabled: true,
+            sound_volume: 0.5,
             status_shortcut: "CommandOrControl+Shift+KeyP".into(),
             visibility_shortcut: "CommandOrControl+Shift+KeyO".into(),
             position_x: None,
@@ -58,6 +62,8 @@ struct DesktopConfig {
     animations: bool,
     opacity: f64,
     dot_size: u8,
+    sound_enabled: bool,
+    sound_volume: f64,
     status_shortcut: String,
     visibility_shortcut: String,
     position_x: Option<i32>,
@@ -197,6 +203,8 @@ fn desktop_config(app: AppHandle) -> Result<DesktopConfig, String> {
         animations: config.animations,
         opacity: config.opacity,
         dot_size: config.dot_size,
+        sound_enabled: config.sound_enabled,
+        sound_volume: config.sound_volume,
         status_shortcut: config.status_shortcut,
         visibility_shortcut: config.visibility_shortcut,
         position_x: config.position_x,
@@ -216,6 +224,8 @@ fn save_desktop_config(
     animations: bool,
     opacity: f64,
     dot_size: u8,
+    sound_enabled: bool,
+    sound_volume: f64,
     status_shortcut: String,
     visibility_shortcut: String,
 ) -> Result<(), String> {
@@ -232,6 +242,9 @@ fn save_desktop_config(
     }
     if !(14..=40).contains(&dot_size) {
         return Err("Choose a dot size from 14px to 40px.".to_string());
+    }
+    if !sound_volume.is_finite() || !(0.0..=1.0).contains(&sound_volume) {
+        return Err("Choose a sound volume from 0% to 100%.".to_string());
     }
     if status_shortcut.trim().is_empty() || visibility_shortcut.trim().is_empty() {
         return Err("Choose both shortcuts.".to_string());
@@ -267,6 +280,8 @@ fn save_desktop_config(
             animations,
             opacity,
             dot_size,
+            sound_enabled,
+            sound_volume,
             status_shortcut,
             visibility_shortcut,
             position_x: previous.position_x,
@@ -336,6 +351,8 @@ mod tests {
             animations: true,
             opacity: 0.75,
             dot_size: 30,
+            sound_enabled: true,
+            sound_volume: 0.5,
             status_shortcut: "CommandOrControl+Shift+P".into(),
             visibility_shortcut: "CommandOrControl+Shift+O".into(),
             position_x: Some(20),
@@ -349,6 +366,8 @@ mod tests {
         assert!(config.animations);
         assert_eq!(config.opacity, 0.75);
         assert_eq!(config.dot_size, 30);
+        assert!(config.sound_enabled);
+        assert_eq!(config.sound_volume, 0.5);
         assert_eq!(config.status_shortcut, "CommandOrControl+Shift+P");
         assert_eq!(
             parse_shortcut("CommandOrControl+Shift+P").unwrap().id(),
@@ -362,6 +381,8 @@ mod tests {
         assert!(legacy.animations);
         assert_eq!(legacy.opacity, 1.0);
         assert_eq!(legacy.dot_size, 22);
+        assert!(legacy.sound_enabled);
+        assert_eq!(legacy.sound_volume, 0.5);
         assert_eq!(legacy.visibility_shortcut, "CommandOrControl+Shift+KeyO");
     }
 }
