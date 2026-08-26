@@ -98,24 +98,20 @@
 
   main {
     min-height: 100vh;
-    padding: clamp(16px, 4vw, 28px);
     background: radial-gradient(circle at top, #272b35, #111214 62%);
   }
 
   section {
     width: 100%;
-    padding: 24px;
-    border: 1px solid rgb(255 255 255 / 0.1);
-    border-radius: 16px;
-    background: rgb(24 25 29 / 0.96);
-    box-shadow: 0 18px 60px rgb(0 0 0 / 0.3);
+    min-height: 100vh;
+    padding: 18px clamp(18px, 4vw, 28px);
   }
 
   header {
     display: flex;
     gap: 13px;
     align-items: flex-start;
-    margin-bottom: 24px;
+    margin-bottom: 14px;
   }
 
   .mark {
@@ -144,5 +140,4 @@
     font-size: 0.82rem;
     line-height: 1.5;
   }
-
 </style>

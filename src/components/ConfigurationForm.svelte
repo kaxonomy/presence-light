@@ -144,12 +144,12 @@
 <style>
   form {
     display: grid;
-    gap: 20px;
+    gap: 12px;
   }
 
   .field {
     display: grid;
-    gap: 7px;
+    gap: 4px;
   }
 
   label,
@@ -174,7 +174,7 @@
   input[type='url'],
   input[type='password'] {
     width: 100%;
-    padding: 11px 12px;
+    padding: 9px 11px;
     border: 1px solid #3f3f46;
     border-radius: 9px;
     color: #fafafa;
@@ -199,7 +199,7 @@
   }
 
   legend {
-    margin-bottom: 7px;
+    margin-bottom: 4px;
   }
 
   .segments {
@@ -213,7 +213,7 @@
 
   .segments label {
     position: relative;
-    padding: 8px 10px;
+    padding: 7px 10px;
     border-radius: 7px;
     color: #a1a1aa;
     text-align: center;
@@ -238,7 +238,7 @@
   .choice {
     display: flex;
     gap: 11px;
-    padding: 13px;
+    padding: 10px;
     border: 1px solid #36363d;
     border-radius: 10px;
     background: #202026;
@@ -265,8 +265,8 @@
   .appearance {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 12px;
-    padding: 13px;
+    gap: 8px;
+    padding: 10px;
     border: 1px solid #36363d;
     border-radius: 10px;
     background: #19191e;
@@ -284,7 +284,7 @@
 
   .choice.compact {
     grid-column: 1 / -1;
-    padding: 9px 11px;
+    padding: 7px 9px;
   }
 
   .opacity {
@@ -317,7 +317,7 @@
 
   button {
     width: 100%;
-    padding: 11px 14px;
+    padding: 10px 14px;
     border: 0;
     border-radius: 9px;
     color: white;

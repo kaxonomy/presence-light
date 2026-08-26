@@ -153,6 +153,11 @@ export async function createPresenceTray(client: PresenceClient): Promise<{
     menu,
     menuOnLeftClick: false,
     tooltip: 'Presence Dot',
+    action: (event) => {
+      if (event.type === 'DoubleClick' && event.button === 'Left') {
+        void showDesktopConfiguration();
+      }
+    },
   });
 
   return {
