@@ -7,6 +7,7 @@
   import {
     getDesktopConfig,
     hideDesktopConfiguration,
+    resetOverlayPosition,
     saveDesktopConfig,
   } from '../lib/desktop';
 
@@ -130,6 +131,15 @@
   function preview(appearance: Pick<Configuration, 'animations' | 'opacity' | 'dotSize' | 'soundEnabled' | 'soundVolume'>): void {
     void getCurrentWindow().emitTo('overlay', 'configuration-preview', appearance);
   }
+
+  async function resetPosition(): Promise<void> {
+    error = '';
+    try {
+      await resetOverlayPosition();
+    } catch (cause) {
+      error = cause instanceof Error ? cause.message : String(cause);
+    }
+  }
 </script>
 
 <main>
@@ -162,6 +172,7 @@
       {busy}
       {error}
       onPreview={preview}
+      onResetPosition={resetPosition}
       onSave={scheduleSave}
     />
     {:else if error}

@@ -23,7 +23,8 @@
   class:busy={status === 'busy'}
   class:pulsing={animated && pulsing}
   class="presence-dot"
-  style:opacity;--dot-size={`${size}px`}
+  style:opacity
+  style:--dot-size={`${size}px`}
   role="status"
   aria-label={label ? `Presence: ${status}` : undefined}
   aria-hidden={!label}

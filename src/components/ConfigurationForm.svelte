@@ -24,6 +24,7 @@
     error?: string;
     buttonLabel?: string;
     onPreview?: (appearance: Pick<Configuration, 'animations' | 'opacity' | 'dotSize' | 'soundEnabled' | 'soundVolume'>) => void;
+    onResetPosition?: () => void | Promise<void>;
     onSave: (configuration: Configuration) => void | Promise<void>;
   };
 
@@ -47,6 +48,7 @@
     error = '',
     buttonLabel = 'Save configuration',
     onPreview,
+    onResetPosition,
     onSave,
   }: Props = $props();
   let inputError = $state('');
@@ -123,7 +125,6 @@
   }
 
   $effect(() => {
-    const current = configuration();
     if (previewAudio) {
       previewAudio.volume = soundVolume;
       if (!soundEnabled) {
@@ -132,6 +133,10 @@
       }
     }
     if (showAppearance) onPreview?.({ animations, opacity, dotSize, soundEnabled, soundVolume });
+  });
+
+  $effect(() => {
+    const current = configuration();
     if (autoSave) void onSave(current);
   });
 </script>
@@ -212,9 +217,12 @@
         <strong>Indicator</strong>
         <small>Appearance updates immediately. Drag the dot to reposition it.</small>
       </div>
-      <label class="choice compact">
+      <label
+        class="choice compact"
+        title="Pulse the indicator after each status update until you click it to acknowledge the notification."
+      >
         <input type="checkbox" bind:checked={animations} />
-        <span><strong>Animations</strong></span>
+        <span><strong>Status update animations</strong></span>
       </label>
       <label class="opacity">
         <span>Opacity</span>
@@ -226,6 +234,11 @@
         <input type="range" min="14" max="40" step="1" bind:value={dotSize} />
         <output>{dotSize}px</output>
       </label>
+      {#if onResetPosition}
+        <button type="button" class="secondary" onclick={() => void onResetPosition()}>
+          Reset indicator position
+        </button>
+      {/if}
       <div class="sound-settings">
         <label class="choice compact">
           <input type="checkbox" bind:checked={soundEnabled} />
@@ -291,10 +304,10 @@
 
   {#if inputError || error}
     <p class="error" role="alert">{inputError || error}</p>
-  {:else if autoSave}
+  {:else if autoSave && busy}
     <p class="save-state" aria-live="polite">
       <span class:busy aria-hidden="true"></span>
-      {busy ? 'Saving changes…' : 'Changes save automatically'}
+      Saving changes…
     </p>
   {/if}
 

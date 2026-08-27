@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { Image } from '@tauri-apps/api/image';
 import { Menu, MenuItem, PredefinedMenuItem } from '@tauri-apps/api/menu';
 import { TrayIcon } from '@tauri-apps/api/tray';
-import { getCurrentWindow, PhysicalPosition, primaryMonitor, Window } from '@tauri-apps/api/window';
+import { currentMonitor, getCurrentWindow, PhysicalPosition, primaryMonitor, Window } from '@tauri-apps/api/window';
 import { register, unregister } from '@tauri-apps/plugin-global-shortcut';
 import { exit } from '@tauri-apps/plugin-process';
 import type { PresenceClient } from './presence/client';
@@ -56,6 +56,22 @@ export async function saveOverlayPosition(positionX: number, positionY: number):
   return invoke('save_overlay_position', { positionX, positionY });
 }
 
+export async function resetOverlayPosition(): Promise<void> {
+  const overlay = await Window.getByLabel('overlay');
+  if (!overlay) throw new Error('The indicator window is unavailable.');
+  const monitor = (await currentMonitor()) ?? (await primaryMonitor());
+  if (!monitor) throw new Error('No active monitor is available.');
+  const { position, size } = monitor.workArea;
+  const overlaySize = Math.round(OVERLAY_SIZE * monitor.scaleFactor);
+  const centered = new PhysicalPosition(
+    position.x + Math.round((size.width - overlaySize) / 2),
+    position.y + Math.round((size.height - overlaySize) / 2),
+  );
+  await overlay.setPosition(centered);
+  await overlay.show();
+  await saveOverlayPosition(centered.x, centered.y);
+}
+
 export async function showDesktopConfiguration(): Promise<void> {
   const configuration = await Window.getByLabel('configuration');
   if (!configuration) throw new Error('The configuration window is unavailable.');
@@ -105,7 +121,6 @@ export async function registerPresenceShortcuts(
   config: Pick<DesktopConfig, 'statusShortcut' | 'visibilityShortcut'>,
 ): Promise<() => Promise<void>> {
   const window = getCurrentWindow();
-  const configurationWindow = await Window.getByLabel('configuration');
   const statusShortcut = config.statusShortcut || DEFAULT_STATUS_SHORTCUT;
   const visibilityShortcut = config.visibilityShortcut || DEFAULT_VISIBILITY_SHORTCUT;
   const registered: string[] = [];
@@ -113,21 +128,13 @@ export async function registerPresenceShortcuts(
   try {
     await register(visibilityShortcut, (event) => {
       if (event.state === 'Pressed') {
-        void (configurationWindow?.isVisible() ?? Promise.resolve(false)).then((configurationOpen) => {
-          if (!configurationOpen) {
-            void window.isVisible().then((visible) => (visible ? window.hide() : window.show()));
-          }
-        });
+        void window.isVisible().then((visible) => (visible ? window.hide() : window.show()));
       }
     });
     registered.push(visibilityShortcut);
     if (client.canControl) {
       await register(statusShortcut, (event) => {
-        if (event.state === 'Pressed') {
-          void (configurationWindow?.isVisible() ?? Promise.resolve(false)).then((configurationOpen) => {
-            if (!configurationOpen) client.toggle();
-          });
-        }
+        if (event.state === 'Pressed') client.toggle();
       });
       registered.push(statusShortcut);
     }
@@ -200,6 +207,7 @@ export async function createPresenceTray(client: PresenceClient): Promise<{
   if (!icon) throw new Error('The application icon is unavailable.');
   const busyIcon = await createBusyIcon(icon);
   let singleClickTimer: ReturnType<typeof setTimeout> | undefined;
+  let suppressClicksUntil = 0;
   let trayStatus: PresenceState['status'] | undefined;
   const tray = await TrayIcon.new({
     id: 'presence',
@@ -208,12 +216,18 @@ export async function createPresenceTray(client: PresenceClient): Promise<{
     showMenuOnLeftClick: false,
     tooltip: 'Presence Dot',
     action: (event) => {
-      if (event.type === 'Click' && event.button === 'Left' && event.buttonState === 'Up') {
+      if (event.type === 'DoubleClick' && event.button === 'Left') {
         clearTimeout(singleClickTimer);
-        if (client.canControl) singleClickTimer = setTimeout(() => client.toggle(), 400);
-      } else if (event.type === 'DoubleClick' && event.button === 'Left') {
-        clearTimeout(singleClickTimer);
+        suppressClicksUntil = Date.now() + 700;
         void showDesktopConfiguration();
+      } else if (
+        event.type === 'Click'
+        && event.button === 'Left'
+        && event.buttonState === 'Up'
+        && Date.now() >= suppressClicksUntil
+      ) {
+        clearTimeout(singleClickTimer);
+        if (client.canControl) singleClickTimer = setTimeout(() => client.toggle(), 650);
       }
     },
   });
