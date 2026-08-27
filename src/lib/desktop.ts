@@ -25,6 +25,7 @@ export type DesktopConfig = {
   dotSize: number;
   soundEnabled: boolean;
   soundVolume: number;
+  muteMicrophoneWhenBusy: boolean;
   statusShortcut: string;
   visibilityShortcut: string;
   positionX: number | null;
@@ -47,6 +48,7 @@ export async function saveDesktopConfig(configuration: {
   dotSize: number;
   soundEnabled: boolean;
   soundVolume: number;
+  muteMicrophoneWhenBusy: boolean;
   statusShortcut: string;
   visibilityShortcut: string;
 }): Promise<void> {
@@ -81,8 +83,8 @@ export async function syncOverlayInteraction(pulsing = false): Promise<void> {
   );
 }
 
-export async function setOutputMuted(muted: boolean): Promise<void> {
-  return invoke('set_output_muted', { muted });
+export async function setMicrophoneMuted(muted: boolean): Promise<void> {
+  return invoke('set_microphone_muted', { muted });
 }
 
 export async function showDesktopConfiguration(): Promise<void> {

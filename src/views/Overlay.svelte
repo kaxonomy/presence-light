@@ -12,7 +12,7 @@
     prepareOverlay,
     registerPresenceShortcuts,
     saveOverlayPosition,
-    setOutputMuted,
+    setMicrophoneMuted,
     showDesktopConfiguration,
     syncOverlayInteraction,
   } from '../lib/desktop';
@@ -69,8 +69,8 @@
 
     async function reset(): Promise<void> {
       const wasVisible = await window.isVisible().catch(() => false);
-      await setOutputMuted(false).catch((error) =>
-        console.warn('[presence] output restore failed', error),
+      await setMicrophoneMuted(false).catch((error) =>
+        console.warn('[presence] microphone restore failed', error),
       );
       client?.stop();
       for (const dispose of cleanup.reverse()) {
@@ -105,6 +105,7 @@
             animations,
             soundEnabled,
             config.canControl,
+            config.muteMicrophoneWhenBusy,
           );
           synchronized = true;
           if (effects.pulsing) {
@@ -118,9 +119,9 @@
               console.warn('[presence] busy chime failed', error),
             );
           }
-          if (effects.outputMuted !== null) {
-            void setOutputMuted(effects.outputMuted).catch((error) =>
-              console.warn('[presence] output mute failed', error),
+          if (effects.microphoneMuted !== null) {
+            void setMicrophoneMuted(effects.microphoneMuted).catch((error) =>
+              console.warn('[presence] microphone mute failed', error),
             );
           }
           state = next;
@@ -182,6 +183,7 @@
           || payload.workerUrl.trim() !== activeConfig.workerUrl
           || payload.token.trim() !== activeConfig.token
           || payload.canControl !== activeConfig.canControl
+          || payload.muteMicrophoneWhenBusy !== activeConfig.muteMicrophoneWhenBusy
           || payload.statusShortcut !== activeConfig.statusShortcut
           || payload.visibilityShortcut !== activeConfig.visibilityShortcut;
         if (needsReset) void queueReset();

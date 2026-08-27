@@ -11,6 +11,7 @@
     dotSize: number;
     soundEnabled: boolean;
     soundVolume: number;
+    muteMicrophoneWhenBusy: boolean;
     statusShortcut: string;
     visibilityShortcut: string;
   };
@@ -38,6 +39,7 @@
     dotSize = $bindable(22),
     soundEnabled = $bindable(true),
     soundVolume = $bindable(0.5),
+    muteMicrophoneWhenBusy = $bindable(false),
     statusShortcut = $bindable('CommandOrControl+Shift+KeyP'),
     visibilityShortcut = $bindable('CommandOrControl+Shift+KeyO'),
     showRole = false,
@@ -89,6 +91,7 @@
       dotSize,
       soundEnabled,
       soundVolume,
+      muteMicrophoneWhenBusy,
       statusShortcut,
       visibilityShortcut,
     };
@@ -219,6 +222,16 @@
       <span>
         <strong>Auto launch on startup</strong>
         <small>Presence Light starts in the tray. The dot stays hidden.</small>
+      </span>
+    </label>
+  {/if}
+
+  {#if showRole && canControl}
+    <label class="choice">
+      <input type="checkbox" bind:checked={muteMicrophoneWhenBusy} />
+      <span>
+        <strong>Mute microphone while Busy</strong>
+        <small>Stop sharing your voice until you become Available.</small>
       </span>
     </label>
   {/if}

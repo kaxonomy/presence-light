@@ -11,7 +11,15 @@ use tauri_plugin_autostart::ManagerExt;
 
 static DEBUG_LOG: OnceLock<Mutex<File>> = OnceLock::new();
 static CONFIG_LOCK: Mutex<()> = Mutex::new(());
-static OUTPUT_MUTED_BY_APP: Mutex<bool> = Mutex::new(false);
+static MICROPHONE_RESTORE: Mutex<Option<MicrophoneRestore>> = Mutex::new(None);
+
+#[derive(Clone, Copy)]
+enum MicrophoneRestore {
+    #[cfg(not(target_os = "macos"))]
+    Unmute,
+    #[cfg(target_os = "macos")]
+    InputVolume(u8),
+}
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -25,6 +33,7 @@ struct SavedConfig {
     dot_size: u8,
     sound_enabled: bool,
     sound_volume: f64,
+    mute_microphone_when_busy: bool,
     status_shortcut: String,
     visibility_shortcut: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -45,6 +54,7 @@ impl Default for SavedConfig {
             dot_size: 22,
             sound_enabled: true,
             sound_volume: 0.5,
+            mute_microphone_when_busy: false,
             status_shortcut: "CommandOrControl+Shift+KeyP".into(),
             visibility_shortcut: "CommandOrControl+Shift+KeyO".into(),
             position_x: None,
@@ -65,6 +75,7 @@ struct DesktopConfig {
     dot_size: u8,
     sound_enabled: bool,
     sound_volume: f64,
+    mute_microphone_when_busy: bool,
     status_shortcut: String,
     visibility_shortcut: String,
     position_x: Option<i32>,
@@ -203,41 +214,49 @@ fn command_output(mut command: std::process::Command) -> Result<String, String> 
 }
 
 #[cfg(target_os = "macos")]
-fn output_is_muted() -> Result<bool, String> {
+fn mute_system_microphone() -> Result<Option<MicrophoneRestore>, String> {
     let mut command = std::process::Command::new("osascript");
-    command.args(["-e", "output muted of (get volume settings)"]);
-    command_output(command).map(|value| value == "true")
+    command.args(["-e", "input volume of (get volume settings)"]);
+    let volume = command_output(command)?
+        .parse::<u8>()
+        .map_err(|error| format!("The application cannot read microphone volume: {error}"))?;
+    if volume == 0 {
+        return Ok(None);
+    }
+    let mut command = std::process::Command::new("osascript");
+    command.args(["-e", "set volume input volume 0"]);
+    command_output(command)?;
+    Ok(Some(MicrophoneRestore::InputVolume(volume)))
 }
 
 #[cfg(target_os = "macos")]
-fn set_system_output_muted(muted: bool) -> Result<(), String> {
+fn restore_system_microphone(restore: MicrophoneRestore) -> Result<(), String> {
+    let MicrophoneRestore::InputVolume(volume) = restore;
     let mut command = std::process::Command::new("osascript");
-    command.args([
-        "-e",
-        if muted {
-            "set volume output muted true"
-        } else {
-            "set volume output muted false"
-        },
-    ]);
+    command.args(["-e", &format!("set volume input volume {volume}")]);
     command_output(command).map(drop)
 }
 
 #[cfg(target_os = "linux")]
-fn output_is_muted() -> Result<bool, String> {
-    let mut command = std::process::Command::new("pactl");
-    command.args(["get-sink-mute", "@DEFAULT_SINK@"]);
-    command_output(command).map(|value| value.ends_with("yes"))
+fn mute_system_microphone() -> Result<Option<MicrophoneRestore>, String> {
+    let source = "@DEFAULT_SOURCE@";
+    let mut query = std::process::Command::new("pactl");
+    query.args(["get-source-mute", source]);
+    let restore = if command_output(query)?.ends_with("yes") {
+        None
+    } else {
+        let mut mute = std::process::Command::new("pactl");
+        mute.args(["set-source-mute", source, "1"]);
+        command_output(mute)?;
+        Some(MicrophoneRestore::Unmute)
+    };
+    Ok(restore)
 }
 
 #[cfg(target_os = "linux")]
-fn set_system_output_muted(muted: bool) -> Result<(), String> {
+fn restore_system_microphone(_restore: MicrophoneRestore) -> Result<(), String> {
     let mut command = std::process::Command::new("pactl");
-    command.args([
-        "set-sink-mute",
-        "@DEFAULT_SINK@",
-        if muted { "1" } else { "0" },
-    ]);
+    command.args(["set-source-mute", "@DEFAULT_SOURCE@", "0"]);
     command_output(command).map(drop)
 }
 
@@ -248,7 +267,7 @@ fn with_audio_endpoint<T>(
     ) -> windows::core::Result<T>,
 ) -> Result<T, String> {
     use windows::Win32::{
-        Media::Audio::{eConsole, eRender, IMMDeviceEnumerator, MMDeviceEnumerator},
+        Media::Audio::{eCapture, eCommunications, IMMDeviceEnumerator, MMDeviceEnumerator},
         System::Com::{
             CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_MULTITHREADED,
         },
@@ -259,53 +278,55 @@ fn with_audio_endpoint<T>(
         let result = (|| {
             let enumerator: IMMDeviceEnumerator =
                 CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)?;
-            let device = enumerator.GetDefaultAudioEndpoint(eRender, eConsole)?;
+            let device = enumerator.GetDefaultAudioEndpoint(eCapture, eCommunications)?;
             let endpoint = device.Activate(CLSCTX_ALL, None)?;
             operation(&endpoint)
         })();
         if initialized {
             CoUninitialize();
         }
-        result.map_err(|error| format!("The application cannot control output audio: {error}"))
+        result.map_err(|error| format!("The application cannot control the microphone: {error}"))
     }
 }
 
 #[cfg(target_os = "windows")]
-fn output_is_muted() -> Result<bool, String> {
-    with_audio_endpoint(|endpoint| unsafe { endpoint.GetMute() }).map(|muted| muted.as_bool())
+fn mute_system_microphone() -> Result<Option<MicrophoneRestore>, String> {
+    if with_audio_endpoint(|endpoint| unsafe { endpoint.GetMute() })?.as_bool() {
+        return Ok(None);
+    }
+    with_audio_endpoint(|endpoint| unsafe { endpoint.SetMute(true, std::ptr::null()) })?;
+    Ok(Some(MicrophoneRestore::Unmute))
 }
 
 #[cfg(target_os = "windows")]
-fn set_system_output_muted(muted: bool) -> Result<(), String> {
-    with_audio_endpoint(|endpoint| unsafe { endpoint.SetMute(muted, std::ptr::null()) })
+fn restore_system_microphone(_restore: MicrophoneRestore) -> Result<(), String> {
+    with_audio_endpoint(|endpoint| unsafe { endpoint.SetMute(false, std::ptr::null()) })
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-fn output_is_muted() -> Result<bool, String> {
-    Err("Output muting is unavailable on this platform.".to_string())
+fn mute_system_microphone() -> Result<Option<MicrophoneRestore>, String> {
+    Err("Microphone muting is unavailable on this platform.".to_string())
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-fn set_system_output_muted(_muted: bool) -> Result<(), String> {
-    Err("Output muting is unavailable on this platform.".to_string())
+fn restore_system_microphone(_restore: MicrophoneRestore) -> Result<(), String> {
+    Err("Microphone muting is unavailable on this platform.".to_string())
 }
 
 #[tauri::command]
-fn set_output_muted(muted: bool) -> Result<(), String> {
-    let mut muted_by_app = OUTPUT_MUTED_BY_APP
+fn set_microphone_muted(muted: bool) -> Result<(), String> {
+    let mut restore = MICROPHONE_RESTORE
         .lock()
-        .map_err(|_| "The output mute lock is unavailable.".to_string())?;
+        .map_err(|_| "The microphone mute lock is unavailable.".to_string())?;
     if muted {
-        if *muted_by_app || output_is_muted()? {
-            return Ok(());
+        if restore.is_none() {
+            *restore = mute_system_microphone()?;
         }
-        set_system_output_muted(true)?;
-        *muted_by_app = true;
-    } else if *muted_by_app {
-        if let Err(error) = set_system_output_muted(false) {
+    } else if let Some(previous) = restore.take() {
+        if let Err(error) = restore_system_microphone(previous) {
+            *restore = Some(previous);
             return Err(error);
         }
-        *muted_by_app = false;
     }
     Ok(())
 }
@@ -329,6 +350,7 @@ fn desktop_config(app: AppHandle) -> Result<DesktopConfig, String> {
         dot_size: config.dot_size,
         sound_enabled: config.sound_enabled,
         sound_volume: config.sound_volume,
+        mute_microphone_when_busy: config.mute_microphone_when_busy,
         status_shortcut: config.status_shortcut,
         visibility_shortcut: config.visibility_shortcut,
         position_x: config.position_x,
@@ -350,6 +372,7 @@ fn save_desktop_config(
     dot_size: u8,
     sound_enabled: bool,
     sound_volume: f64,
+    mute_microphone_when_busy: bool,
     status_shortcut: String,
     visibility_shortcut: String,
 ) -> Result<(), String> {
@@ -406,6 +429,7 @@ fn save_desktop_config(
             dot_size,
             sound_enabled,
             sound_volume,
+            mute_microphone_when_busy,
             status_shortcut,
             visibility_shortcut,
             position_x: previous.position_x,
@@ -450,14 +474,14 @@ pub fn run() {
             desktop_config,
             save_desktop_config,
             save_overlay_position,
-            set_output_muted,
+            set_microphone_muted,
             debug_log
         ])
         .build(tauri::generate_context!())
         .expect("error while building Presence Light");
     app.run(|_, event| {
         if matches!(event, tauri::RunEvent::Exit) {
-            let _ = set_output_muted(false);
+            let _ = set_microphone_muted(false);
             write_debug_log("INFO", "Presence Light stopped");
         }
     });
@@ -479,6 +503,7 @@ mod tests {
             dot_size: 30,
             sound_enabled: true,
             sound_volume: 0.5,
+            mute_microphone_when_busy: true,
             status_shortcut: "CommandOrControl+Shift+P".into(),
             visibility_shortcut: "CommandOrControl+Shift+O".into(),
             position_x: Some(20),
@@ -494,6 +519,7 @@ mod tests {
         assert_eq!(config.dot_size, 30);
         assert!(config.sound_enabled);
         assert_eq!(config.sound_volume, 0.5);
+        assert!(config.mute_microphone_when_busy);
         assert_eq!(config.status_shortcut, "CommandOrControl+Shift+P");
         assert_eq!(
             parse_shortcut("CommandOrControl+Shift+P").unwrap().id(),
@@ -509,6 +535,7 @@ mod tests {
         assert_eq!(legacy.dot_size, 22);
         assert!(legacy.sound_enabled);
         assert_eq!(legacy.sound_volume, 0.5);
+        assert!(!legacy.mute_microphone_when_busy);
         assert_eq!(legacy.visibility_shortcut, "CommandOrControl+Shift+KeyO");
     }
 }

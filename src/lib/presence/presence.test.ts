@@ -61,22 +61,24 @@ describe('presence application logic', () => {
   });
 
   it('keeps initial busy synchronization passive', () => {
-    expect(presenceTransitionEffects('available', 'busy', false, true, true, true)).toEqual({
+    expect(presenceTransitionEffects('available', 'busy', false, true, true, true, true)).toEqual({
       pulsing: false,
       playChime: false,
-      outputMuted: null,
+      microphoneMuted: null,
     });
   });
 
-  it('notifies and mutes only controllers on a real busy update', () => {
-    expect(presenceTransitionEffects('available', 'busy', true, true, true, true)).toEqual({
+  it('notifies and mutes only enabled controllers on a real busy update', () => {
+    expect(presenceTransitionEffects('available', 'busy', true, true, true, true, true)).toEqual({
       pulsing: true,
       playChime: true,
-      outputMuted: true,
+      microphoneMuted: true,
     });
-    expect(presenceTransitionEffects('available', 'busy', true, true, true, false).outputMuted)
+    expect(presenceTransitionEffects('available', 'busy', true, true, true, false, true).microphoneMuted)
       .toBeNull();
-    expect(presenceTransitionEffects('busy', 'available', true, true, true, true).outputMuted)
+    expect(presenceTransitionEffects('available', 'busy', true, true, true, true, false).microphoneMuted)
+      .toBeNull();
+    expect(presenceTransitionEffects('busy', 'available', true, true, true, true, true).microphoneMuted)
       .toBe(false);
   });
 

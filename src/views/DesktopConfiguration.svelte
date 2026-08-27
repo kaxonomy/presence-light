@@ -20,6 +20,7 @@
   let dotSize = 22;
   let soundEnabled = true;
   let soundVolume = 0.5;
+  let muteMicrophoneWhenBusy = false;
   let statusShortcut = 'CommandOrControl+Shift+KeyP';
   let visibilityShortcut = 'CommandOrControl+Shift+KeyO';
   let configured = false;
@@ -60,6 +61,7 @@
         dotSize = configuration.dotSize;
         soundEnabled = configuration.soundEnabled;
         soundVolume = configuration.soundVolume;
+        muteMicrophoneWhenBusy = configuration.muteMicrophoneWhenBusy;
         statusShortcut = configuration.statusShortcut;
         visibilityShortcut = configuration.visibilityShortcut;
         configured = configuration.configured;
@@ -74,6 +76,7 @@
           dotSize,
           soundEnabled,
           soundVolume,
+          muteMicrophoneWhenBusy,
           statusShortcut,
           visibilityShortcut,
         });
@@ -163,6 +166,7 @@
       bind:dotSize
       bind:soundEnabled
       bind:soundVolume
+      bind:muteMicrophoneWhenBusy
       bind:statusShortcut
       bind:visibilityShortcut
       showRole

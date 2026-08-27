@@ -102,6 +102,7 @@
         dotSize={22}
         soundEnabled={true}
         soundVolume={0.5}
+        muteMicrophoneWhenBusy={false}
         statusShortcut="CommandOrControl+Shift+KeyP"
         visibilityShortcut="CommandOrControl+Shift+KeyO"
         onSave={save}
