@@ -4,6 +4,7 @@
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import PresenceDot from '../components/PresenceDot.svelte';
   import { createPresenceClient, type PresenceClient } from '../lib/presence/client';
+  import { presenceTransitionEffects } from '../lib/presence/effects';
   import type { PresenceState } from '../lib/presence/store';
   import {
     createPresenceTray,
@@ -11,6 +12,7 @@
     prepareOverlay,
     registerPresenceShortcuts,
     saveOverlayPosition,
+    setOutputMuted,
     showDesktopConfiguration,
     syncOverlayInteraction,
   } from '../lib/desktop';
@@ -42,10 +44,14 @@
 
   function acknowledge(): void {
     pulsing = false;
+    void syncOverlayInteraction();
   }
 
   function interact(event: PointerEvent): void {
-    acknowledge();
+    if (pulsing) {
+      acknowledge();
+      return;
+    }
     startMoving(event);
   }
 
@@ -63,6 +69,9 @@
 
     async function reset(): Promise<void> {
       const wasVisible = await window.isVisible().catch(() => false);
+      await setOutputMuted(false).catch((error) =>
+        console.warn('[presence] output restore failed', error),
+      );
       client?.stop();
       for (const dispose of cleanup.reverse()) {
         try {
@@ -89,16 +98,30 @@
             state = { ...state, connection: next.connection };
             return;
           }
+          const effects = presenceTransitionEffects(
+            state.status,
+            next.status,
+            synchronized,
+            animations,
+            soundEnabled,
+            config.canControl,
+          );
           synchronized = true;
-          if (next.status !== state.status) {
+          if (effects.pulsing) {
             pulseId += 1;
-            pulsing = animations;
-            if (next.status === 'busy' && soundEnabled) {
-              chime.currentTime = 0;
-              void chime.play().catch((error) =>
-                console.warn('[presence] busy chime failed', error),
-              );
-            }
+            pulsing = true;
+            void syncOverlayInteraction(true);
+          }
+          if (effects.playChime) {
+            chime.currentTime = 0;
+            void chime.play().catch((error) =>
+              console.warn('[presence] busy chime failed', error),
+            );
+          }
+          if (effects.outputMuted !== null) {
+            void setOutputMuted(effects.outputMuted).catch((error) =>
+              console.warn('[presence] output mute failed', error),
+            );
           }
           state = next;
         }));
@@ -110,7 +133,7 @@
         else if ((!initialized || !activeConfig?.configured) ? !config.startMinimized : wasVisible) {
           await prepareOverlay(config.positionX, config.positionY);
         }
-        await syncOverlayInteraction();
+        await syncOverlayInteraction(pulsing);
         try {
           cleanup.push(await registerPresenceShortcuts(client, config));
         } catch (error) {
@@ -180,6 +203,9 @@
         }
       },
     );
+    const stopConfigurationClosed = listen('configuration-closed', () => {
+      void syncOverlayInteraction(pulsing);
+    });
     const stopMoved = window.onMoved(({ payload }) => {
       if (!moving) return;
       clearTimeout(moveTimer);
@@ -199,6 +225,7 @@
       for (const dispose of cleanup.reverse()) void dispose();
       void stopRefresh.then((stop) => stop());
       void stopPreview.then((stop) => stop());
+      void stopConfigurationClosed.then((stop) => stop());
       void stopMoved.then((stop) => stop());
     };
   });

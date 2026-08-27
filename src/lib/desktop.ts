@@ -7,6 +7,7 @@ import { currentMonitor, getCurrentWindow, PhysicalPosition, primaryMonitor, Win
 import { register, unregister } from '@tauri-apps/plugin-global-shortcut';
 import { exit } from '@tauri-apps/plugin-process';
 import type { PresenceClient } from './presence/client';
+import { overlayIgnoresCursor } from './presence/effects';
 import type { PresenceState } from './presence/store';
 
 const DEFAULT_STATUS_SHORTCUT = 'CommandOrControl+Shift+KeyP';
@@ -72,10 +73,16 @@ export async function resetOverlayPosition(): Promise<void> {
   await saveOverlayPosition(centered.x, centered.y);
 }
 
-export async function syncOverlayInteraction(): Promise<void> {
+export async function syncOverlayInteraction(pulsing = false): Promise<void> {
   const overlay = await Window.getByLabel('overlay');
   const configuration = await Window.getByLabel('configuration');
-  await overlay?.setIgnoreCursorEvents(!((await configuration?.isVisible()) ?? false));
+  await overlay?.setIgnoreCursorEvents(
+    overlayIgnoresCursor((await configuration?.isVisible()) ?? false, pulsing),
+  );
+}
+
+export async function setOutputMuted(muted: boolean): Promise<void> {
+  return invoke('set_output_muted', { muted });
 }
 
 export async function showDesktopConfiguration(): Promise<void> {
@@ -92,10 +99,12 @@ export async function showDesktopConfiguration(): Promise<void> {
 }
 
 export async function hideDesktopConfiguration(hideOverlay = false): Promise<void> {
-  await getCurrentWindow().hide();
+  const configuration = getCurrentWindow();
+  await configuration.hide();
   const overlay = await Window.getByLabel('overlay');
   if (hideOverlay) await overlay?.hide();
   await syncOverlayInteraction();
+  await configuration.emitTo('overlay', 'configuration-closed');
 }
 
 export async function prepareOverlay(positionX: number | null, positionY: number | null): Promise<void> {

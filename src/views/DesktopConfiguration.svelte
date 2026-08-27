@@ -148,7 +148,7 @@
       <span class="mark" aria-hidden="true"></span>
       <div>
         <h1 id="configuration-title">{configured ? 'Edit Config' : 'Set up Presence Light'}</h1>
-        <p>{configured ? 'Update this device and dot.' : 'Connect this computer to your shared presence room.'}</p>
+        {#if !configured}<p>Connect this computer to your shared presence room.</p>{/if}
       </div>
     </header>
 
@@ -199,14 +199,14 @@
   section {
     width: 100%;
     min-height: 100vh;
-    padding: 26px clamp(22px, 4vw, 38px);
+    padding: 18px clamp(18px, 3vw, 28px);
   }
 
   header {
     display: flex;
     gap: 13px;
     align-items: flex-start;
-    margin-bottom: 22px;
+    margin-bottom: 14px;
   }
 
   .mark {

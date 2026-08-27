@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createPresenceClient } from './client';
 import { reconnectDelay } from './connection';
+import { overlayIgnoresCursor, presenceTransitionEffects } from './effects';
 import { parseServerMessage } from './protocol';
 import { createPresenceStore, toggleStatus } from './store';
 
@@ -57,5 +58,31 @@ describe('presence application logic', () => {
 
     expect(client.setStatus('available')).toBe(false);
     expect(client.store.current().status).toBe('busy');
+  });
+
+  it('keeps initial busy synchronization passive', () => {
+    expect(presenceTransitionEffects('available', 'busy', false, true, true, true)).toEqual({
+      pulsing: false,
+      playChime: false,
+      outputMuted: null,
+    });
+  });
+
+  it('notifies and mutes only controllers on a real busy update', () => {
+    expect(presenceTransitionEffects('available', 'busy', true, true, true, true)).toEqual({
+      pulsing: true,
+      playChime: true,
+      outputMuted: true,
+    });
+    expect(presenceTransitionEffects('available', 'busy', true, true, true, false).outputMuted)
+      .toBeNull();
+    expect(presenceTransitionEffects('busy', 'available', true, true, true, true).outputMuted)
+      .toBe(false);
+  });
+
+  it('accepts cursor events only while settings or a notification is active', () => {
+    expect(overlayIgnoresCursor(false, false)).toBe(true);
+    expect(overlayIgnoresCursor(false, true)).toBe(false);
+    expect(overlayIgnoresCursor(true, false)).toBe(false);
   });
 });

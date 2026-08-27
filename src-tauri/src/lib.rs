@@ -11,6 +11,7 @@ use tauri_plugin_autostart::ManagerExt;
 
 static DEBUG_LOG: OnceLock<Mutex<File>> = OnceLock::new();
 static CONFIG_LOCK: Mutex<()> = Mutex::new(());
+static OUTPUT_MUTED_BY_APP: Mutex<bool> = Mutex::new(false);
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -186,6 +187,129 @@ fn parse_shortcut(value: &str) -> Result<tauri_plugin_global_shortcut::Shortcut,
         .map_err(|error| format!("Choose a valid shortcut: {error}"))
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn command_output(mut command: std::process::Command) -> Result<String, String> {
+    let name = format!("{command:?}");
+    let output = command
+        .output()
+        .map_err(|error| format!("The application cannot run {name}: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "{name} failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn output_is_muted() -> Result<bool, String> {
+    let mut command = std::process::Command::new("osascript");
+    command.args(["-e", "output muted of (get volume settings)"]);
+    command_output(command).map(|value| value == "true")
+}
+
+#[cfg(target_os = "macos")]
+fn set_system_output_muted(muted: bool) -> Result<(), String> {
+    let mut command = std::process::Command::new("osascript");
+    command.args([
+        "-e",
+        if muted {
+            "set volume output muted true"
+        } else {
+            "set volume output muted false"
+        },
+    ]);
+    command_output(command).map(drop)
+}
+
+#[cfg(target_os = "linux")]
+fn output_is_muted() -> Result<bool, String> {
+    let mut command = std::process::Command::new("pactl");
+    command.args(["get-sink-mute", "@DEFAULT_SINK@"]);
+    command_output(command).map(|value| value.ends_with("yes"))
+}
+
+#[cfg(target_os = "linux")]
+fn set_system_output_muted(muted: bool) -> Result<(), String> {
+    let mut command = std::process::Command::new("pactl");
+    command.args([
+        "set-sink-mute",
+        "@DEFAULT_SINK@",
+        if muted { "1" } else { "0" },
+    ]);
+    command_output(command).map(drop)
+}
+
+#[cfg(target_os = "windows")]
+fn with_audio_endpoint<T>(
+    operation: impl FnOnce(
+        &windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume,
+    ) -> windows::core::Result<T>,
+) -> Result<T, String> {
+    use windows::Win32::{
+        Media::Audio::{eConsole, eRender, IMMDeviceEnumerator, MMDeviceEnumerator},
+        System::Com::{
+            CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_MULTITHREADED,
+        },
+    };
+
+    unsafe {
+        let initialized = CoInitializeEx(None, COINIT_MULTITHREADED).is_ok();
+        let result = (|| {
+            let enumerator: IMMDeviceEnumerator =
+                CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)?;
+            let device = enumerator.GetDefaultAudioEndpoint(eRender, eConsole)?;
+            let endpoint = device.Activate(CLSCTX_ALL, None)?;
+            operation(&endpoint)
+        })();
+        if initialized {
+            CoUninitialize();
+        }
+        result.map_err(|error| format!("The application cannot control output audio: {error}"))
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn output_is_muted() -> Result<bool, String> {
+    with_audio_endpoint(|endpoint| unsafe { endpoint.GetMute() }).map(|muted| muted.as_bool())
+}
+
+#[cfg(target_os = "windows")]
+fn set_system_output_muted(muted: bool) -> Result<(), String> {
+    with_audio_endpoint(|endpoint| unsafe { endpoint.SetMute(muted, std::ptr::null()) })
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+fn output_is_muted() -> Result<bool, String> {
+    Err("Output muting is unavailable on this platform.".to_string())
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+fn set_system_output_muted(_muted: bool) -> Result<(), String> {
+    Err("Output muting is unavailable on this platform.".to_string())
+}
+
+#[tauri::command]
+fn set_output_muted(muted: bool) -> Result<(), String> {
+    let mut muted_by_app = OUTPUT_MUTED_BY_APP
+        .lock()
+        .map_err(|_| "The output mute lock is unavailable.".to_string())?;
+    if muted {
+        if *muted_by_app || output_is_muted()? {
+            return Ok(());
+        }
+        set_system_output_muted(true)?;
+        *muted_by_app = true;
+    } else if *muted_by_app {
+        if let Err(error) = set_system_output_muted(false) {
+            return Err(error);
+        }
+        *muted_by_app = false;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn desktop_config(app: AppHandle) -> Result<DesktopConfig, String> {
     let _lock = CONFIG_LOCK
@@ -326,12 +450,14 @@ pub fn run() {
             desktop_config,
             save_desktop_config,
             save_overlay_position,
+            set_output_muted,
             debug_log
         ])
         .build(tauri::generate_context!())
         .expect("error while building Presence Light");
     app.run(|_, event| {
         if matches!(event, tauri::RunEvent::Exit) {
+            let _ = set_output_muted(false);
             write_debug_log("INFO", "Presence Light stopped");
         }
     });

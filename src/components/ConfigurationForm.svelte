@@ -54,6 +54,7 @@
   let inputError = $state('');
   let capturing = $state<'status' | 'visibility' | null>(null);
   let previewAudio: HTMLAudioElement | undefined;
+  let copiedToken = $state('');
 
   function captureShortcut(event: KeyboardEvent): void {
     if (!capturing) return;
@@ -101,6 +102,16 @@
     void previewAudio.play().catch((cause) => {
       inputError = `The test sound could not play: ${cause instanceof Error ? cause.message : String(cause)}`;
     });
+  }
+
+  async function copyToken(): Promise<void> {
+    inputError = '';
+    try {
+      await navigator.clipboard.writeText(token);
+      copiedToken = token;
+    } catch (cause) {
+      inputError = `The token could not be copied: ${cause instanceof Error ? cause.message : String(cause)}`;
+    }
   }
 
   function submit(): void {
@@ -154,18 +165,15 @@
   {#if showAppearance}
     <div class="section-title">
       <strong>Connection</strong>
-      <small>Changes reconnect automatically after you finish typing.</small>
     </div>
   {/if}
   <div class="field">
     <label for="worker-url">Worker WebSocket URL</label>
-    <p id="worker-url-help">Paste the URL that connects this device to your presence room.</p>
     <input
       id="worker-url"
       type="url"
       bind:value={workerUrl}
       placeholder="wss://preview-presence-light.your-name.workers.dev/ws/friends"
-      aria-describedby="worker-url-help"
       autocomplete="url"
       spellcheck="false"
       required
@@ -190,14 +198,19 @@
 
   <div class="field">
     <label for="device-token">Device token</label>
-    <input
-      id="device-token"
-      type="password"
-      bind:value={token}
-      placeholder={canControl ? 'Control token' : 'Viewer token'}
-      autocomplete="current-password"
-      required
-    />
+    <div class="token-input">
+      <input
+        id="device-token"
+        type="password"
+        bind:value={token}
+        placeholder={canControl ? 'Control token' : 'Viewer token'}
+        autocomplete="current-password"
+        required
+      />
+      <button type="button" class="copy" disabled={!token} onclick={() => void copyToken()}>
+        {copiedToken === token && token ? 'Copied' : 'Copy'}
+      </button>
+    </div>
   </div>
 
   {#if showAutostart}
@@ -215,7 +228,6 @@
     <div class="appearance">
       <div class="section-title">
         <strong>Indicator</strong>
-        <small>Appearance updates immediately. Drag the dot to reposition it.</small>
       </div>
       <label
         class="choice compact"
@@ -265,7 +277,6 @@
       </div>
       <div class="shortcuts">
         <strong>Shortcuts</strong>
-        <small>Click a shortcut, then press the new keys together. Esc cancels.</small>
         {#if canControl}
           <label>
             <span>Toggle status</span>
@@ -319,7 +330,7 @@
 <style>
   form {
     display: grid;
-    gap: 12px;
+    gap: 9px;
   }
 
   form.split {
@@ -329,12 +340,12 @@
 
   .connection-settings {
     display: grid;
-    gap: 12px;
+    gap: 9px;
   }
 
   .panel,
   .appearance {
-    padding: 16px;
+    padding: 13px;
     border: 1px solid rgb(255 255 255 / 0.09);
     border-radius: 14px;
     background: rgb(24 25 30 / 0.9);
@@ -363,7 +374,6 @@
     margin: 0;
   }
 
-  .field p,
   small {
     color: #a1a1aa;
     font-size: 0.8rem;
@@ -378,6 +388,21 @@
     border-radius: 9px;
     color: #fafafa;
     background: #111114;
+  }
+
+  .token-input {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px;
+  }
+
+  button.copy {
+    width: auto;
+    padding: 7px 11px;
+    border: 1px solid #3f3f46;
+    color: #dbeafe;
+    background: #202026;
+    font-size: 0.78rem;
   }
 
   input::placeholder {
@@ -437,7 +462,7 @@
   .choice {
     display: flex;
     gap: 11px;
-    padding: 10px;
+    padding: 8px;
     border: 1px solid #36363d;
     border-radius: 10px;
     background: #202026;
@@ -464,7 +489,7 @@
   .appearance {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 12px;
+    gap: 9px;
   }
 
   .section-title {
@@ -486,14 +511,14 @@
 
   .shortcuts {
     display: grid;
-    gap: 10px;
+    gap: 7px;
     padding-top: 4px;
     border-top: 1px solid rgb(255 255 255 / 0.08);
   }
 
   .sound-settings {
     display: grid;
-    gap: 10px;
+    gap: 7px;
     padding-top: 4px;
     border-top: 1px solid rgb(255 255 255 / 0.08);
   }
@@ -615,6 +640,11 @@
   }
 
   button.secondary:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  button.copy:disabled {
     cursor: not-allowed;
     opacity: 0.5;
   }
