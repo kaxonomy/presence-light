@@ -72,6 +72,12 @@ export async function resetOverlayPosition(): Promise<void> {
   await saveOverlayPosition(centered.x, centered.y);
 }
 
+export async function syncOverlayInteraction(): Promise<void> {
+  const overlay = await Window.getByLabel('overlay');
+  const configuration = await Window.getByLabel('configuration');
+  await overlay?.setIgnoreCursorEvents(!((await configuration?.isVisible()) ?? false));
+}
+
 export async function showDesktopConfiguration(): Promise<void> {
   const configuration = await Window.getByLabel('configuration');
   if (!configuration) throw new Error('The configuration window is unavailable.');
@@ -79,9 +85,9 @@ export async function showDesktopConfiguration(): Promise<void> {
   if (!(await configuration.isVisible())) {
     await configuration.emit('configuration-opened', (await overlay?.isVisible()) ?? false);
   }
-  await overlay?.setIgnoreCursorEvents(false);
   await overlay?.show();
   await configuration.show();
+  await syncOverlayInteraction();
   await configuration.setFocus();
 }
 
@@ -89,7 +95,7 @@ export async function hideDesktopConfiguration(hideOverlay = false): Promise<voi
   await getCurrentWindow().hide();
   const overlay = await Window.getByLabel('overlay');
   if (hideOverlay) await overlay?.hide();
-  await overlay?.setIgnoreCursorEvents(false);
+  await syncOverlayInteraction();
 }
 
 export async function prepareOverlay(positionX: number | null, positionY: number | null): Promise<void> {
@@ -112,8 +118,8 @@ export async function prepareOverlay(positionX: number | null, positionY: number
   } catch (error) {
     console.warn('[presence] overlay positioning failed', error);
   }
-  await window.setIgnoreCursorEvents(false);
   await window.show();
+  await syncOverlayInteraction();
 }
 
 export async function registerPresenceShortcuts(

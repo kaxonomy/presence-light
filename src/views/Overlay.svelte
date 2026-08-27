@@ -12,6 +12,7 @@
     registerPresenceShortcuts,
     saveOverlayPosition,
     showDesktopConfiguration,
+    syncOverlayInteraction,
   } from '../lib/desktop';
 
   let state: PresenceState = {
@@ -109,6 +110,7 @@
         else if ((!initialized || !activeConfig?.configured) ? !config.startMinimized : wasVisible) {
           await prepareOverlay(config.positionX, config.positionY);
         }
+        await syncOverlayInteraction();
         try {
           cleanup.push(await registerPresenceShortcuts(client, config));
         } catch (error) {
