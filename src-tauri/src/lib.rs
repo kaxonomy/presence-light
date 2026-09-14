@@ -38,7 +38,6 @@ struct SavedConfig {
     sound_volume: f64,
     sound_output_device: String,
     sound_input_device: String,
-    mute_microphone_when_busy: bool,
     status_shortcut: String,
     visibility_shortcut: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -61,7 +60,6 @@ impl Default for SavedConfig {
             sound_volume: 0.5,
             sound_output_device: String::new(),
             sound_input_device: String::new(),
-            mute_microphone_when_busy: false,
             status_shortcut: "CommandOrControl+Shift+KeyP".into(),
             visibility_shortcut: "CommandOrControl+Shift+KeyO".into(),
             position_x: None,
@@ -84,7 +82,6 @@ struct DesktopConfig {
     sound_volume: f64,
     sound_output_device: String,
     sound_input_device: String,
-    mute_microphone_when_busy: bool,
     status_shortcut: String,
     visibility_shortcut: String,
     position_x: Option<i32>,
@@ -373,7 +370,6 @@ fn desktop_config(app: AppHandle) -> Result<DesktopConfig, String> {
         sound_volume: config.sound_volume,
         sound_output_device: config.sound_output_device,
         sound_input_device: config.sound_input_device,
-        mute_microphone_when_busy: config.mute_microphone_when_busy,
         status_shortcut: config.status_shortcut,
         visibility_shortcut: config.visibility_shortcut,
         position_x: config.position_x,
@@ -397,7 +393,6 @@ fn save_desktop_config(
     sound_volume: f64,
     sound_output_device: String,
     sound_input_device: String,
-    mute_microphone_when_busy: bool,
     status_shortcut: String,
     visibility_shortcut: String,
 ) -> Result<(), String> {
@@ -456,7 +451,6 @@ fn save_desktop_config(
             sound_volume,
             sound_output_device,
             sound_input_device,
-            mute_microphone_when_busy,
             status_shortcut,
             visibility_shortcut,
             position_x: previous.position_x,
@@ -540,7 +534,6 @@ mod tests {
             sound_volume: 0.5,
             sound_output_device: "virtual-cable".into(),
             sound_input_device: "physical-microphone".into(),
-            mute_microphone_when_busy: true,
             status_shortcut: "CommandOrControl+Shift+P".into(),
             visibility_shortcut: "CommandOrControl+Shift+O".into(),
             position_x: Some(20),
@@ -558,7 +551,6 @@ mod tests {
         assert_eq!(config.sound_volume, 0.5);
         assert_eq!(config.sound_output_device, "virtual-cable");
         assert_eq!(config.sound_input_device, "physical-microphone");
-        assert!(config.mute_microphone_when_busy);
         assert_eq!(config.status_shortcut, "CommandOrControl+Shift+P");
         assert_eq!(
             parse_shortcut("CommandOrControl+Shift+P").unwrap().id(),
@@ -576,7 +568,15 @@ mod tests {
         assert_eq!(legacy.sound_volume, 0.5);
         assert!(legacy.sound_output_device.is_empty());
         assert!(legacy.sound_input_device.is_empty());
-        assert!(!legacy.mute_microphone_when_busy);
         assert_eq!(legacy.visibility_shortcut, "CommandOrControl+Shift+KeyO");
+        for removed_value in ["true", "false"] {
+            let migrated: SavedConfig =
+                serde_yaml::from_str(&format!("{text}muteMicrophoneWhenBusy: {removed_value}\n"))
+                    .unwrap();
+            assert_eq!(migrated.sound_input_device, "physical-microphone");
+            assert!(!serde_yaml::to_string(&migrated)
+                .unwrap()
+                .contains("muteMicrophoneWhenBusy"));
+        }
     }
 }

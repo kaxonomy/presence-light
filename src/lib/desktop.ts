@@ -27,7 +27,6 @@ export type DesktopConfig = {
   soundVolume: number;
   soundOutputDevice: string;
   soundInputDevice: string;
-  muteMicrophoneWhenBusy: boolean;
   statusShortcut: string;
   visibilityShortcut: string;
   positionX: number | null;
@@ -52,7 +51,6 @@ export async function saveDesktopConfig(configuration: {
   soundVolume: number;
   soundOutputDevice: string;
   soundInputDevice: string;
-  muteMicrophoneWhenBusy: boolean;
   statusShortcut: string;
   visibilityShortcut: string;
 }): Promise<void> {
@@ -241,7 +239,7 @@ export async function createPresenceTray(client: PresenceClient): Promise<{
         : []),
       await MenuItem.new({
         id: 'configuration',
-        text: 'Edit Config',
+        text: 'Configuration',
         action: () => void showDesktopConfiguration(),
       }),
       await MenuItem.new({ id: 'show', text: 'Show Dot', action: () => window.show() }),
@@ -288,7 +286,7 @@ export async function createPresenceTray(client: PresenceClient): Promise<{
         connection.setText(
           `Connection: ${state.connection === 'connected' ? 'Connected' : 'Reconnecting'}`,
         ),
-        tray.setTooltip(`Presence Light — ${state.status === 'available' ? 'Available' : 'Busy'}`),
+        tray.setTooltip(`Presence Light: ${state.status === 'available' ? 'Available' : 'Busy'}`),
       ];
       if (state.status !== trayStatus) {
         trayStatus = state.status;

@@ -7,7 +7,6 @@ export function presenceTransitionEffects(
   animations: boolean,
   soundEnabled: boolean,
   canControl: boolean,
-  muteMicrophoneWhenBusy: boolean,
   synchronizeMicrophone = false,
 ) {
   const changed = synchronized && previous !== next;
@@ -15,8 +14,20 @@ export function presenceTransitionEffects(
   return {
     pulsing: changed && animations,
     playChime: changed && next === 'busy' && canControl && soundEnabled,
-    microphoneMuted: syncMicrophone && canControl && muteMicrophoneWhenBusy ? next === 'busy' : null,
+    microphoneMuted: syncMicrophone && canControl ? next === 'busy' : null,
   };
+}
+
+export async function playChimeThenMute(
+  playChime: () => Promise<void>,
+  muteMicrophone: () => Promise<void>,
+  isCurrent: () => boolean,
+): Promise<void> {
+  try {
+    await playChime();
+  } finally {
+    if (isCurrent()) await muteMicrophone();
+  }
 }
 
 export function overlayIgnoresCursor(configurationVisible: boolean, pulsing: boolean): boolean {

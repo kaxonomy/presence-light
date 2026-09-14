@@ -104,7 +104,6 @@
         soundVolume={0.5}
         soundOutputDevice=""
         soundInputDevice=""
-        muteMicrophoneWhenBusy={false}
         statusShortcut="CommandOrControl+Shift+KeyP"
         visibilityShortcut="CommandOrControl+Shift+KeyO"
         onSave={save}

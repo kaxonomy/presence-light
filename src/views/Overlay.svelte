@@ -4,7 +4,7 @@
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import PresenceDot from '../components/PresenceDot.svelte';
   import { createPresenceClient, type PresenceClient } from '../lib/presence/client';
-  import { presenceTransitionEffects } from '../lib/presence/effects';
+  import { playChimeThenMute, presenceTransitionEffects } from '../lib/presence/effects';
   import type { PresenceState } from '../lib/presence/store';
   import {
     createPresenceTray,
@@ -68,8 +68,10 @@
     let initialized = false;
     let resetRunning = false;
     let resetQueued = false;
+    let audioGeneration = 0;
 
     async function reset(): Promise<void> {
+      audioGeneration += 1;
       await stopSoundboardChime().catch((error) =>
         console.warn('[presence] chime cleanup failed', error),
       );
@@ -93,7 +95,7 @@
         soundEnabled = config.soundEnabled;
         soundVolume = config.soundVolume;
         soundOutputDevice = config.soundOutputDevice;
-        if (!config.canControl || !config.muteMicrophoneWhenBusy) {
+        if (!config.canControl) {
           await setMicrophoneMuted(false).catch((error) =>
             console.warn('[presence] microphone restore failed', error),
           );
@@ -127,7 +129,6 @@
             animations,
             soundEnabled,
             config.canControl,
-            config.muteMicrophoneWhenBusy,
             !!config.soundOutputDevice || initialized,
           );
           synchronized = true;
@@ -136,17 +137,23 @@
             pulsing = true;
             void syncOverlayInteraction(true);
           }
-          if (effects.playChime) {
-            void playSoundboardChime(soundOutputDevice, soundVolume).catch((error) => {
+          if (effects.microphoneMuted !== null) {
+            const generation = ++audioGeneration;
+            const muted = effects.microphoneMuted;
+            const updateMicrophone = () => setMicrophoneMuted(muted);
+            if (!effects.microphoneMuted) void stopSoundboardChime();
+            const audioUpdate = effects.playChime
+              ? playChimeThenMute(
+                  () => playSoundboardChime(soundOutputDevice, soundVolume),
+                  updateMicrophone,
+                  () => generation === audioGeneration && !disposed,
+                )
+              : updateMicrophone();
+            void audioUpdate.catch((error) => {
               setupError = error instanceof Error ? error.message : String(error);
-              console.warn('[presence] busy chime failed', error);
+              console.warn('[presence] presence audio failed', error);
               void window.emitTo('configuration', 'desktop-error', setupError);
             });
-          }
-          if (effects.microphoneMuted !== null) {
-            void setMicrophoneMuted(effects.microphoneMuted).catch((error) =>
-              console.warn('[presence] microphone mute failed', error),
-            );
           }
           state = next;
         }));
@@ -209,7 +216,6 @@
           || payload.canControl !== activeConfig.canControl
           || payload.soundOutputDevice !== activeConfig.soundOutputDevice
           || payload.soundInputDevice !== activeConfig.soundInputDevice
-          || payload.muteMicrophoneWhenBusy !== activeConfig.muteMicrophoneWhenBusy
           || payload.statusShortcut !== activeConfig.statusShortcut
           || payload.visibilityShortcut !== activeConfig.visibilityShortcut;
         if (needsReset) void queueReset();
@@ -245,6 +251,7 @@
 
     return () => {
       disposed = true;
+      audioGeneration += 1;
       clearTimeout(moveTimer);
       void stopSoundboardChime();
       void configureSoundboard('', '');
@@ -259,6 +266,7 @@
 </script>
 
 <main
+  class="presence-overlay"
   aria-label="Presence overlay"
 >
   <button
@@ -275,9 +283,9 @@
 </main>
 
 <style>
-  :global(html),
-  :global(body),
-  :global(#app) {
+  :global(html:has(.presence-overlay)),
+  :global(body:has(.presence-overlay)),
+  :global(#app:has(.presence-overlay)) {
     overflow: hidden;
     min-height: 100%;
     background: transparent !important;

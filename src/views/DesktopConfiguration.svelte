@@ -31,7 +31,6 @@
   let audioOutputs: Array<{ id: string; name: string }> = [];
   let audioInputs: Array<{ id: string; name: string }> = [];
   let audioPlatform = '';
-  let muteMicrophoneWhenBusy = false;
   let statusShortcut = 'CommandOrControl+Shift+KeyP';
   let visibilityShortcut = 'CommandOrControl+Shift+KeyO';
   let configured = false;
@@ -77,7 +76,6 @@
         soundVolume = configuration.soundVolume;
         soundOutputDevice = configuration.soundOutputDevice;
         soundInputDevice = configuration.soundInputDevice;
-        muteMicrophoneWhenBusy = configuration.muteMicrophoneWhenBusy;
         statusShortcut = configuration.statusShortcut;
         visibilityShortcut = configuration.visibilityShortcut;
         configured = configuration.configured;
@@ -94,7 +92,6 @@
           soundVolume,
           soundOutputDevice,
           soundInputDevice,
-          muteMicrophoneWhenBusy,
           statusShortcut,
           visibilityShortcut,
         });
@@ -185,12 +182,12 @@
   }
 </script>
 
-<main>
+<main class="desktop-configuration">
   <section aria-labelledby="configuration-title">
     <header>
       <span class="mark" aria-hidden="true"></span>
       <div>
-        <h1 id="configuration-title">{configured ? 'Edit Config' : 'Set up Presence Light'}</h1>
+        <h1 id="configuration-title">{configured ? 'Configuration' : 'Configure Presence Light'}</h1>
         {#if !configured}<p>Connect this computer to your shared presence room.</p>{/if}
       </div>
     </header>
@@ -208,7 +205,6 @@
       bind:soundVolume
       bind:soundOutputDevice
       bind:soundInputDevice
-      bind:muteMicrophoneWhenBusy
       bind:statusShortcut
       bind:visibilityShortcut
       showRole
@@ -230,21 +226,26 @@
     {:else if error}
       <p class="load-error" role="alert">{error}</p>
     {:else}
-      <p class="loading">Loading settings…</p>
+      <p class="loading">Loading configuration…</p>
     {/if}
   </section>
 </main>
 
 <style>
-  :global(html),
-  :global(body),
-  :global(#app) {
+  :global(html:has(.desktop-configuration)),
+  :global(body:has(.desktop-configuration)),
+  :global(#app:has(.desktop-configuration)) {
     min-height: 100%;
     background: #111214 !important;
+    color-scheme: dark;
+    scrollbar-color: #71717a #18191e;
   }
 
   main {
-    min-height: 100vh;
+    height: 100dvh;
+    overflow: auto;
+    scrollbar-gutter: stable;
+    overscroll-behavior: contain;
     background: radial-gradient(circle at top, #272b35, #111214 62%);
   }
 
