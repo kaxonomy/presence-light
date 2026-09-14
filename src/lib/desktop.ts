@@ -25,6 +25,8 @@ export type DesktopConfig = {
   dotSize: number;
   soundEnabled: boolean;
   soundVolume: number;
+  soundOutputDevice: string;
+  soundInputDevice: string;
   muteMicrophoneWhenBusy: boolean;
   statusShortcut: string;
   visibilityShortcut: string;
@@ -48,6 +50,8 @@ export async function saveDesktopConfig(configuration: {
   dotSize: number;
   soundEnabled: boolean;
   soundVolume: number;
+  soundOutputDevice: string;
+  soundInputDevice: string;
   muteMicrophoneWhenBusy: boolean;
   statusShortcut: string;
   visibilityShortcut: string;
@@ -85,6 +89,34 @@ export async function syncOverlayInteraction(pulsing = false): Promise<void> {
 
 export async function setMicrophoneMuted(muted: boolean): Promise<void> {
   return invoke('set_microphone_muted', { muted });
+}
+
+export function soundboardOutputs(): Promise<Array<{ id: string; name: string }>> {
+  return invoke('soundboard_outputs');
+}
+
+export function soundboardInputs(): Promise<Array<{ id: string; name: string }>> {
+  return invoke('soundboard_inputs');
+}
+
+export function soundboardPlatform(): Promise<string> {
+  return invoke('soundboard_platform');
+}
+
+export function setupSoundboardCable(): Promise<void> {
+  return invoke('setup_soundboard_cable');
+}
+
+export function configureSoundboard(inputDeviceId: string, outputDeviceId: string): Promise<void> {
+  return invoke('configure_soundboard', { inputDeviceId, outputDeviceId });
+}
+
+export function playSoundboardChime(deviceId: string, volume: number): Promise<void> {
+  return invoke('play_soundboard_chime', { deviceId, volume });
+}
+
+export function stopSoundboardChime(): Promise<void> {
+  return invoke('stop_soundboard_chime');
 }
 
 export async function showDesktopConfiguration(): Promise<void> {

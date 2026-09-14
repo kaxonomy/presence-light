@@ -8,13 +8,16 @@
   import type { PresenceState } from '../lib/presence/store';
   import {
     createPresenceTray,
+    configureSoundboard,
     getDesktopConfig,
     prepareOverlay,
+    playSoundboardChime,
     registerPresenceShortcuts,
     saveOverlayPosition,
     setMicrophoneMuted,
     showDesktopConfiguration,
     syncOverlayInteraction,
+    stopSoundboardChime,
   } from '../lib/desktop';
 
   let state: PresenceState = {
@@ -27,6 +30,7 @@
   let dotSize = 22;
   let soundEnabled = true;
   let soundVolume = 0.5;
+  let soundOutputDevice = '';
   let pulsing = false;
   let pulseId = 0;
   let setupError = '';
@@ -56,8 +60,6 @@
   }
 
   onMount(() => {
-    const chime = new Audio('/chime1.mp3');
-    chime.preload = 'auto';
     let client: PresenceClient | undefined;
     let cleanup: Array<() => void | Promise<void>> = [];
     let disposed = false;
@@ -68,10 +70,10 @@
     let resetQueued = false;
 
     async function reset(): Promise<void> {
-      const wasVisible = await window.isVisible().catch(() => false);
-      await setMicrophoneMuted(false).catch((error) =>
-        console.warn('[presence] microphone restore failed', error),
+      await stopSoundboardChime().catch((error) =>
+        console.warn('[presence] chime cleanup failed', error),
       );
+      const wasVisible = await window.isVisible().catch(() => false);
       client?.stop();
       for (const dispose of cleanup.reverse()) {
         try {
@@ -90,7 +92,27 @@
         dotSize = config.dotSize;
         soundEnabled = config.soundEnabled;
         soundVolume = config.soundVolume;
-        chime.volume = soundVolume;
+        soundOutputDevice = config.soundOutputDevice;
+        if (!config.canControl || !config.muteMicrophoneWhenBusy) {
+          await setMicrophoneMuted(false).catch((error) =>
+            console.warn('[presence] microphone restore failed', error),
+          );
+        }
+        try {
+          const routeEnabled = config.canControl && config.soundOutputDevice;
+          await configureSoundboard(
+            routeEnabled ? config.soundInputDevice : '',
+            routeEnabled ? config.soundOutputDevice : '',
+          );
+        } catch (error) {
+          setupError = error instanceof Error ? error.message : String(error);
+          console.error('[presence] microphone routing failed', error);
+          void window.emitTo('configuration', 'desktop-error', setupError);
+        }
+        if (disposed) {
+          await configureSoundboard('', '');
+          return;
+        }
         client = createPresenceClient(config.workerUrl, config.token, config.canControl);
         let synchronized = false;
         cleanup.push(client.store.subscribe((next) => {
@@ -106,6 +128,7 @@
             soundEnabled,
             config.canControl,
             config.muteMicrophoneWhenBusy,
+            !!config.soundOutputDevice || initialized,
           );
           synchronized = true;
           if (effects.pulsing) {
@@ -114,10 +137,11 @@
             void syncOverlayInteraction(true);
           }
           if (effects.playChime) {
-            chime.currentTime = 0;
-            void chime.play().catch((error) =>
-              console.warn('[presence] busy chime failed', error),
-            );
+            void playSoundboardChime(soundOutputDevice, soundVolume).catch((error) => {
+              setupError = error instanceof Error ? error.message : String(error);
+              console.warn('[presence] busy chime failed', error);
+              void window.emitTo('configuration', 'desktop-error', setupError);
+            });
           }
           if (effects.microphoneMuted !== null) {
             void setMicrophoneMuted(effects.microphoneMuted).catch((error) =>
@@ -183,6 +207,8 @@
           || payload.workerUrl.trim() !== activeConfig.workerUrl
           || payload.token.trim() !== activeConfig.token
           || payload.canControl !== activeConfig.canControl
+          || payload.soundOutputDevice !== activeConfig.soundOutputDevice
+          || payload.soundInputDevice !== activeConfig.soundInputDevice
           || payload.muteMicrophoneWhenBusy !== activeConfig.muteMicrophoneWhenBusy
           || payload.statusShortcut !== activeConfig.statusShortcut
           || payload.visibilityShortcut !== activeConfig.visibilityShortcut;
@@ -198,10 +224,8 @@
         dotSize = payload.dotSize;
         soundEnabled = payload.soundEnabled;
         soundVolume = payload.soundVolume;
-        chime.volume = soundVolume;
         if (!soundEnabled) {
-          chime.pause();
-          chime.currentTime = 0;
+          void stopSoundboardChime();
         }
       },
     );
@@ -222,7 +246,8 @@
     return () => {
       disposed = true;
       clearTimeout(moveTimer);
-      chime.pause();
+      void stopSoundboardChime();
+      void configureSoundboard('', '');
       client?.stop();
       for (const dispose of cleanup.reverse()) void dispose();
       void stopRefresh.then((stop) => stop());

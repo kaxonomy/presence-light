@@ -9,6 +9,12 @@
     hideDesktopConfiguration,
     resetOverlayPosition,
     saveDesktopConfig,
+    playSoundboardChime,
+    configureSoundboard,
+    soundboardOutputs,
+    soundboardInputs,
+    soundboardPlatform,
+    setupSoundboardCable,
   } from '../lib/desktop';
 
   let workerUrl = '';
@@ -20,6 +26,11 @@
   let dotSize = 22;
   let soundEnabled = true;
   let soundVolume = 0.5;
+  let soundOutputDevice = '';
+  let soundInputDevice = '';
+  let audioOutputs: Array<{ id: string; name: string }> = [];
+  let audioInputs: Array<{ id: string; name: string }> = [];
+  let audioPlatform = '';
   let muteMicrophoneWhenBusy = false;
   let statusShortcut = 'CommandOrControl+Shift+KeyP';
   let visibilityShortcut = 'CommandOrControl+Shift+KeyO';
@@ -35,6 +46,9 @@
   let lastSaved = '';
 
   onMount(() => {
+    void soundboardPlatform().then((platform) => { audioPlatform = platform; }).catch((cause) => {
+      error = String(cause);
+    });
     const window = getCurrentWindow();
     const unlisten = window.onCloseRequested((event) => {
       event.preventDefault();
@@ -61,6 +75,8 @@
         dotSize = configuration.dotSize;
         soundEnabled = configuration.soundEnabled;
         soundVolume = configuration.soundVolume;
+        soundOutputDevice = configuration.soundOutputDevice;
+        soundInputDevice = configuration.soundInputDevice;
         muteMicrophoneWhenBusy = configuration.muteMicrophoneWhenBusy;
         statusShortcut = configuration.statusShortcut;
         visibilityShortcut = configuration.visibilityShortcut;
@@ -76,11 +92,16 @@
           dotSize,
           soundEnabled,
           soundVolume,
+          soundOutputDevice,
+          soundInputDevice,
           muteMicrophoneWhenBusy,
           statusShortcut,
           visibilityShortcut,
         });
         loaded = true;
+        if (canControl) {
+          void refreshAudioOutputs().catch((cause) => { error = String(cause); });
+        }
       })
       .catch((cause) => {
         error = cause instanceof Error ? cause.message : String(cause);
@@ -135,6 +156,25 @@
     void getCurrentWindow().emitTo('overlay', 'configuration-preview', appearance);
   }
 
+  async function refreshAudioOutputs(): Promise<void> {
+    [audioOutputs, audioInputs] = await Promise.all([soundboardOutputs(), soundboardInputs()]);
+    if (loaded && canControl && soundOutputDevice) {
+      await configureSoundboard(soundInputDevice, soundOutputDevice);
+    }
+  }
+
+  async function testSound(): Promise<void> {
+    const input = soundInputDevice;
+    const output = soundOutputDevice;
+    await configureSoundboard(input, output);
+    if (!canControl) {
+      await configureSoundboard('', '');
+      return;
+    }
+    if (!soundEnabled || input !== soundInputDevice || output !== soundOutputDevice) return;
+    await playSoundboardChime(output, soundVolume);
+  }
+
   async function resetPosition(): Promise<void> {
     error = '';
     try {
@@ -166,6 +206,8 @@
       bind:dotSize
       bind:soundEnabled
       bind:soundVolume
+      bind:soundOutputDevice
+      bind:soundInputDevice
       bind:muteMicrophoneWhenBusy
       bind:statusShortcut
       bind:visibilityShortcut
@@ -175,6 +217,12 @@
       autoSave
       {busy}
       {error}
+      {audioOutputs}
+      {audioInputs}
+      {audioPlatform}
+      onRefreshAudioOutputs={refreshAudioOutputs}
+      onSetupAudio={setupSoundboardCable}
+      onTestSound={testSound}
       onPreview={preview}
       onResetPosition={resetPosition}
       onSave={scheduleSave}

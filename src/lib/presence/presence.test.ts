@@ -74,11 +74,30 @@ describe('presence application logic', () => {
       playChime: true,
       microphoneMuted: true,
     });
-    expect(presenceTransitionEffects('available', 'busy', true, true, true, false, true).microphoneMuted)
-      .toBeNull();
+    expect(presenceTransitionEffects('available', 'busy', true, true, true, false, true)).toEqual({
+      pulsing: true,
+      playChime: false,
+      microphoneMuted: null,
+    });
+    expect(presenceTransitionEffects('available', 'busy', true, true, false, true, true).playChime)
+      .toBe(false);
+    expect(presenceTransitionEffects('busy', 'busy', true, true, true, true, true).playChime)
+      .toBe(false);
+    expect(presenceTransitionEffects('busy', 'available', true, true, true, true, true).playChime)
+      .toBe(false);
     expect(presenceTransitionEffects('available', 'busy', true, true, true, true, false).microphoneMuted)
       .toBeNull();
     expect(presenceTransitionEffects('busy', 'available', true, true, true, true, true).microphoneMuted)
+      .toBe(false);
+  });
+
+  it('synchronizes microphone mute after routing or a settings reset without replaying the chime', () => {
+    expect(presenceTransitionEffects('available', 'busy', false, true, true, true, true, true)).toEqual({
+      pulsing: false,
+      playChime: false,
+      microphoneMuted: true,
+    });
+    expect(presenceTransitionEffects('busy', 'available', false, true, true, true, true, true).microphoneMuted)
       .toBe(false);
   });
 

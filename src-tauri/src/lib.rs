@@ -9,6 +9,9 @@ use std::{
 use tauri::{AppHandle, Manager};
 use tauri_plugin_autostart::ManagerExt;
 
+mod audio_setup;
+mod soundboard;
+
 static DEBUG_LOG: OnceLock<Mutex<File>> = OnceLock::new();
 static CONFIG_LOCK: Mutex<()> = Mutex::new(());
 static MICROPHONE_RESTORE: Mutex<Option<MicrophoneRestore>> = Mutex::new(None);
@@ -33,6 +36,8 @@ struct SavedConfig {
     dot_size: u8,
     sound_enabled: bool,
     sound_volume: f64,
+    sound_output_device: String,
+    sound_input_device: String,
     mute_microphone_when_busy: bool,
     status_shortcut: String,
     visibility_shortcut: String,
@@ -54,6 +59,8 @@ impl Default for SavedConfig {
             dot_size: 22,
             sound_enabled: true,
             sound_volume: 0.5,
+            sound_output_device: String::new(),
+            sound_input_device: String::new(),
             mute_microphone_when_busy: false,
             status_shortcut: "CommandOrControl+Shift+KeyP".into(),
             visibility_shortcut: "CommandOrControl+Shift+KeyO".into(),
@@ -75,6 +82,8 @@ struct DesktopConfig {
     dot_size: u8,
     sound_enabled: bool,
     sound_volume: f64,
+    sound_output_device: String,
+    sound_input_device: String,
     mute_microphone_when_busy: bool,
     status_shortcut: String,
     visibility_shortcut: String,
@@ -313,20 +322,32 @@ fn restore_system_microphone(_restore: MicrophoneRestore) -> Result<(), String> 
     Err("Microphone muting is unavailable on this platform.".to_string())
 }
 
+fn restore_microphone_state(restore: &mut Option<MicrophoneRestore>) -> Result<(), String> {
+    if let Some(previous) = restore.take() {
+        if let Err(error) = restore_system_microphone(previous) {
+            *restore = Some(previous);
+            return Err(error);
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn set_microphone_muted(muted: bool) -> Result<(), String> {
     let mut restore = MICROPHONE_RESTORE
         .lock()
         .map_err(|_| "The microphone mute lock is unavailable.".to_string())?;
+    if soundboard::mute_microphone_if_routed(muted)? {
+        // A call uses the virtual microphone: mute only physical mic samples,
+        // leaving the cable and independently mixed chime audible.
+        return restore_microphone_state(&mut restore);
+    }
     if muted {
         if restore.is_none() {
             *restore = mute_system_microphone()?;
         }
-    } else if let Some(previous) = restore.take() {
-        if let Err(error) = restore_system_microphone(previous) {
-            *restore = Some(previous);
-            return Err(error);
-        }
+    } else {
+        restore_microphone_state(&mut restore)?;
     }
     Ok(())
 }
@@ -350,6 +371,8 @@ fn desktop_config(app: AppHandle) -> Result<DesktopConfig, String> {
         dot_size: config.dot_size,
         sound_enabled: config.sound_enabled,
         sound_volume: config.sound_volume,
+        sound_output_device: config.sound_output_device,
+        sound_input_device: config.sound_input_device,
         mute_microphone_when_busy: config.mute_microphone_when_busy,
         status_shortcut: config.status_shortcut,
         visibility_shortcut: config.visibility_shortcut,
@@ -372,6 +395,8 @@ fn save_desktop_config(
     dot_size: u8,
     sound_enabled: bool,
     sound_volume: f64,
+    sound_output_device: String,
+    sound_input_device: String,
     mute_microphone_when_busy: bool,
     status_shortcut: String,
     visibility_shortcut: String,
@@ -429,6 +454,8 @@ fn save_desktop_config(
             dot_size,
             sound_enabled,
             sound_volume,
+            sound_output_device,
+            sound_input_device,
             mute_microphone_when_busy,
             status_shortcut,
             visibility_shortcut,
@@ -475,12 +502,20 @@ pub fn run() {
             save_desktop_config,
             save_overlay_position,
             set_microphone_muted,
+            soundboard::soundboard_outputs,
+            soundboard::soundboard_inputs,
+            soundboard::configure_soundboard,
+            soundboard::play_soundboard_chime,
+            soundboard::stop_soundboard_chime,
+            audio_setup::soundboard_platform,
+            audio_setup::setup_soundboard_cable,
             debug_log
         ])
         .build(tauri::generate_context!())
         .expect("error while building Presence Light");
     app.run(|_, event| {
         if matches!(event, tauri::RunEvent::Exit) {
+            let _ = soundboard::stop_soundboard();
             let _ = set_microphone_muted(false);
             write_debug_log("INFO", "Presence Light stopped");
         }
@@ -503,6 +538,8 @@ mod tests {
             dot_size: 30,
             sound_enabled: true,
             sound_volume: 0.5,
+            sound_output_device: "virtual-cable".into(),
+            sound_input_device: "physical-microphone".into(),
             mute_microphone_when_busy: true,
             status_shortcut: "CommandOrControl+Shift+P".into(),
             visibility_shortcut: "CommandOrControl+Shift+O".into(),
@@ -519,6 +556,8 @@ mod tests {
         assert_eq!(config.dot_size, 30);
         assert!(config.sound_enabled);
         assert_eq!(config.sound_volume, 0.5);
+        assert_eq!(config.sound_output_device, "virtual-cable");
+        assert_eq!(config.sound_input_device, "physical-microphone");
         assert!(config.mute_microphone_when_busy);
         assert_eq!(config.status_shortcut, "CommandOrControl+Shift+P");
         assert_eq!(
@@ -535,6 +574,8 @@ mod tests {
         assert_eq!(legacy.dot_size, 22);
         assert!(legacy.sound_enabled);
         assert_eq!(legacy.sound_volume, 0.5);
+        assert!(legacy.sound_output_device.is_empty());
+        assert!(legacy.sound_input_device.is_empty());
         assert!(!legacy.mute_microphone_when_busy);
         assert_eq!(legacy.visibility_shortcut, "CommandOrControl+Shift+KeyO");
     }

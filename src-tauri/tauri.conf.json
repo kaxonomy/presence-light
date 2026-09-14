@@ -50,6 +50,14 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "linux": {
+      "deb": {
+        "depends": ["libasound2-plugins", "pulseaudio-utils"]
+      },
+      "rpm": {
+        "depends": ["alsa-plugins-pulseaudio", "pulseaudio-utils"]
+      }
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

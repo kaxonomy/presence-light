@@ -8,12 +8,14 @@ export function presenceTransitionEffects(
   soundEnabled: boolean,
   canControl: boolean,
   muteMicrophoneWhenBusy: boolean,
+  synchronizeMicrophone = false,
 ) {
   const changed = synchronized && previous !== next;
+  const syncMicrophone = changed || (!synchronized && synchronizeMicrophone);
   return {
     pulsing: changed && animations,
-    playChime: changed && next === 'busy' && soundEnabled,
-    microphoneMuted: changed && canControl && muteMicrophoneWhenBusy ? next === 'busy' : null,
+    playChime: changed && next === 'busy' && canControl && soundEnabled,
+    microphoneMuted: syncMicrophone && canControl && muteMicrophoneWhenBusy ? next === 'busy' : null,
   };
 }
 

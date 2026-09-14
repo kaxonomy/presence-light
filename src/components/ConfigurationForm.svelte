@@ -11,6 +11,8 @@
     dotSize: number;
     soundEnabled: boolean;
     soundVolume: number;
+    soundOutputDevice: string;
+    soundInputDevice: string;
     muteMicrophoneWhenBusy: boolean;
     statusShortcut: string;
     visibilityShortcut: string;
@@ -26,6 +28,12 @@
     buttonLabel?: string;
     onPreview?: (appearance: Pick<Configuration, 'animations' | 'opacity' | 'dotSize' | 'soundEnabled' | 'soundVolume'>) => void;
     onResetPosition?: () => void | Promise<void>;
+    audioOutputs?: { id: string; name: string }[];
+    audioInputs?: { id: string; name: string }[];
+    audioPlatform?: string;
+    onRefreshAudioOutputs?: () => Promise<void>;
+    onSetupAudio?: () => Promise<void>;
+    onTestSound?: () => Promise<void>;
     onSave: (configuration: Configuration) => void | Promise<void>;
   };
 
@@ -39,6 +47,8 @@
     dotSize = $bindable(22),
     soundEnabled = $bindable(true),
     soundVolume = $bindable(0.5),
+    soundOutputDevice = $bindable(''),
+    soundInputDevice = $bindable(''),
     muteMicrophoneWhenBusy = $bindable(false),
     statusShortcut = $bindable('CommandOrControl+Shift+KeyP'),
     visibilityShortcut = $bindable('CommandOrControl+Shift+KeyO'),
@@ -51,11 +61,18 @@
     buttonLabel = 'Save configuration',
     onPreview,
     onResetPosition,
+    audioOutputs = [],
+    audioInputs = [],
+    audioPlatform = '',
+    onRefreshAudioOutputs,
+    onSetupAudio,
+    onTestSound,
     onSave,
   }: Props = $props();
   let inputError = $state('');
   let capturing = $state<'status' | 'visibility' | null>(null);
-  let previewAudio: HTMLAudioElement | undefined;
+  let audioAction = $state<'setup' | 'refresh' | 'test' | null>(null);
+  let audioError = $state('');
   let copiedToken = $state('');
 
   function captureShortcut(event: KeyboardEvent): void {
@@ -91,20 +108,28 @@
       dotSize,
       soundEnabled,
       soundVolume,
+      soundOutputDevice,
+      soundInputDevice,
       muteMicrophoneWhenBusy,
       statusShortcut,
       visibilityShortcut,
     };
   }
 
-  function testSound(): void {
-    previewAudio ??= new Audio('/chime1.mp3');
-    previewAudio.volume = soundVolume;
-    previewAudio.currentTime = 0;
-    inputError = '';
-    void previewAudio.play().catch((cause) => {
-      inputError = `The test sound could not play: ${cause instanceof Error ? cause.message : String(cause)}`;
-    });
+  async function runAudioAction(action: 'setup' | 'refresh' | 'test'): Promise<void> {
+    const callback = action === 'setup' ? onSetupAudio : action === 'refresh' ? onRefreshAudioOutputs : onTestSound;
+    if (!callback || audioAction) return;
+    audioError = '';
+    audioAction = action;
+    try {
+      await callback();
+      if (action === 'setup') await onRefreshAudioOutputs?.();
+    } catch (cause) {
+      const description = action === 'setup' ? 'Audio setup could not start' : action === 'refresh' ? 'Audio devices could not refresh' : 'The test chime could not play';
+      audioError = `${description}: ${cause instanceof Error ? cause.message : String(cause)}`;
+    } finally {
+      audioAction = null;
+    }
   }
 
   async function copyToken(): Promise<void> {
@@ -139,13 +164,6 @@
   }
 
   $effect(() => {
-    if (previewAudio) {
-      previewAudio.volume = soundVolume;
-      if (!soundEnabled) {
-        previewAudio.pause();
-        previewAudio.currentTime = 0;
-      }
-    }
     if (showAppearance) onPreview?.({ animations, opacity, dotSize, soundEnabled, soundVolume });
   });
 
@@ -231,7 +249,7 @@
       <input type="checkbox" bind:checked={muteMicrophoneWhenBusy} />
       <span>
         <strong>Mute microphone while Busy</strong>
-        <small>Stop sharing your voice until you become Available.</small>
+        <small>Mute your voice until you become Available. Chimes keep playing through the cable.</small>
       </span>
     </label>
   {/if}
@@ -264,30 +282,6 @@
           Reset indicator position
         </button>
       {/if}
-      <div class="sound-settings">
-        <label class="choice compact">
-          <input type="checkbox" bind:checked={soundEnabled} />
-          <span>
-            <strong>Busy chime</strong>
-            <small>Play a chime when the status changes to Busy.</small>
-          </span>
-        </label>
-        <label class="opacity" class:disabled={!soundEnabled}>
-          <span>Volume</span>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.05"
-            bind:value={soundVolume}
-            disabled={!soundEnabled}
-          />
-          <output>{Math.round(soundVolume * 100)}%</output>
-        </label>
-        <button type="button" class="secondary" disabled={!soundEnabled} onclick={testSound}>
-          Test sound
-        </button>
-      </div>
       <div class="shortcuts">
         <strong>Shortcuts</strong>
         {#if canControl}
@@ -324,6 +318,124 @@
         </label>
       </div>
     </div>
+    {#if canControl}
+      <div class="panel sound-settings">
+        <label class="choice compact">
+          <input type="checkbox" bind:checked={soundEnabled} />
+          <span>
+            <strong>Busy chime</strong>
+            <small>Send a chime through your virtual microphone when you become Busy.</small>
+          </span>
+        </label>
+        <label class="opacity" class:disabled={!soundEnabled}>
+          <span>Volume</span>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            bind:value={soundVolume}
+            disabled={!soundEnabled}
+          />
+          <output>{Math.round(soundVolume * 100)}%</output>
+        </label>
+        <details open={!soundOutputDevice}>
+          <summary>Set up a virtual microphone</summary>
+          <div class="audio-guide">
+            <small>A virtual cable combines your voice and the chime into one microphone for your calls.</small>
+            <ol>
+              <li>
+                {#if audioPlatform === 'windows'}
+                  Install VB-CABLE, then restart your computer if the installer asks.
+                {:else if audioPlatform === 'macos'}
+                  Install BlackHole 2ch and allow microphone access when asked.
+                {:else if audioPlatform === 'linux'}
+                  Create a virtual microphone. Presence Light restores the selected cable when it starts.
+                {:else}
+                  Install a virtual audio cable for your operating system.
+                {/if}
+                {#if onSetupAudio}
+                  <button type="button" class="secondary" disabled={!!audioAction} onclick={() => void runAudioAction('setup')}>
+                    {audioAction === 'setup' ? (audioPlatform === 'linux' ? 'Creating virtual microphone…' : 'Opening audio setup…') : audioPlatform === 'linux' ? 'Create virtual microphone' : 'Get virtual audio cable'}
+                  </button>
+                {/if}
+              </li>
+              <li>Refresh devices, then select your cable and physical microphone below.</li>
+              <li>
+                In your call app, choose
+                {#if audioPlatform === 'windows'}
+                  <strong>CABLE Output</strong>
+                {:else if audioPlatform === 'macos'}
+                  <strong>BlackHole 2ch</strong>
+                {:else if audioPlatform === 'linux'}
+                  <strong>Presence Light Microphone</strong>
+                {:else}
+                  the cable’s microphone
+                {/if}
+                as the microphone. Keep your usual speakers or headphones.
+              </li>
+            </ol>
+          </div>
+        </details>
+        <div class="field">
+          <label for="sound-output">Virtual cable output</label>
+          <select id="sound-output" bind:value={soundOutputDevice}>
+            <option value="">Choose a virtual cable</option>
+            {#if soundOutputDevice && !audioOutputs.some((device) => device.id === soundOutputDevice)}
+              <option value={soundOutputDevice}>Saved cable unavailable — reconnect and refresh</option>
+            {/if}
+            {#each audioOutputs as device (device.id)}
+              <option value={device.id}>{device.name}</option>
+            {/each}
+          </select>
+          <small>
+            {#if audioPlatform === 'windows'}
+              Choose CABLE Input, the cable’s playback device.
+            {:else if audioPlatform === 'macos'}
+              Choose BlackHole 2ch.
+            {:else if audioPlatform === 'linux'}
+              Choose Presence Light Cable.
+            {:else}
+              Choose the cable’s playback device to send sound to your calls.
+            {/if}
+          </small>
+        </div>
+        <div class="field">
+          <label for="sound-input">Your microphone</label>
+          <select id="sound-input" bind:value={soundInputDevice}>
+            <option value="">Chime only — do not include my voice</option>
+            {#if soundInputDevice && !audioInputs.some((device) => device.id === soundInputDevice)}
+              <option value={soundInputDevice}>Saved microphone unavailable — reconnect and refresh</option>
+            {/if}
+            {#each audioInputs as device (device.id)}
+              <option value={device.id}>{device.name}</option>
+            {/each}
+          </select>
+          <small>Choose your physical microphone to include your voice in the cable.</small>
+        </div>
+        <div class="audio-actions">
+          {#if onRefreshAudioOutputs}
+            <button type="button" class="secondary" disabled={!!audioAction} onclick={() => void runAudioAction('refresh')}>
+              {audioAction === 'refresh' ? 'Refreshing…' : 'Refresh devices'}
+            </button>
+          {/if}
+          {#if onTestSound}
+            <button
+              type="button"
+              class="secondary"
+              disabled={!soundEnabled || !soundOutputDevice || !!audioAction}
+              onclick={() => void runAudioAction('test')}
+            >
+              {audioAction === 'test' ? 'Playing…' : 'Test chime'}
+            </button>
+          {/if}
+        </div>
+        <small>Keep the call app unmuted; its mute button also silences chimes. Use “Mute microphone while Busy” here to mute only your voice.</small>
+        {#if audioError}
+          <p class="error" role="alert">{audioError}</p>
+        {/if}
+      </div>
+    {/if}
   {/if}
 
   {#if inputError || error}
@@ -394,8 +506,10 @@
   }
 
   input[type='url'],
-  input[type='password'] {
+  input[type='password'],
+  select {
     width: 100%;
+    min-width: 0;
     padding: 9px 11px;
     border: 1px solid #3f3f46;
     border-radius: 9px;
@@ -423,6 +537,8 @@
   }
 
   input:focus-visible,
+  select:focus-visible,
+  summary:focus-visible,
   button:focus-visible {
     outline: 3px solid #93c5fd;
     outline-offset: 2px;
@@ -531,9 +647,56 @@
 
   .sound-settings {
     display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px;
+  }
+
+  .sound-settings > :not(.field) {
+    grid-column: 1 / -1;
+  }
+
+  .sound-settings summary {
+    padding: 5px 0;
+    color: #dbeafe;
+    font-size: 0.8rem;
+    font-weight: 650;
+    cursor: pointer;
+  }
+
+  .audio-guide {
+    display: grid;
     gap: 7px;
-    padding-top: 4px;
-    border-top: 1px solid rgb(255 255 255 / 0.08);
+    padding: 5px 0;
+  }
+
+  .audio-guide ol {
+    display: grid;
+    gap: 9px;
+    margin: 0;
+    padding-left: 20px;
+    color: #d4d4d8;
+    font-size: 0.8rem;
+    line-height: 1.45;
+  }
+
+  .audio-guide strong {
+    font-size: inherit;
+  }
+
+  .audio-guide button {
+    margin-top: 7px;
+  }
+
+  .audio-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+  }
+
+  .audio-actions button {
+    flex: 1 1 auto;
+    width: auto;
   }
 
   .opacity.disabled {
@@ -576,7 +739,8 @@
   }
 
   @media (max-width: 680px) {
-    form.split {
+    form.split,
+    .sound-settings {
       grid-template-columns: 1fr;
     }
 
