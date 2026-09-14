@@ -1,17 +1,21 @@
 use rodio::{
     cpal::{
         self,
-        traits::{DeviceTrait, HostTrait, StreamTrait},
-        FromSample, Sample,
+        traits::{DeviceTrait, HostTrait},
     },
-    Decoder, DeviceSinkBuilder, MixerDeviceSink, Player, Source,
+    Decoder, DeviceSinkBuilder, MixerDeviceSink, Player,
+};
+#[cfg(not(target_os = "windows"))]
+use rodio::{
+    cpal::{traits::StreamTrait, FromSample, Sample},
+    Source,
 };
 use serde::Serialize;
 use std::{
     io::Cursor,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc, LazyLock, Mutex,
+        Arc, Mutex,
     },
     time::Duration,
 };
@@ -21,8 +25,9 @@ static PLAYBACK_GENERATION: AtomicU64 = AtomicU64::new(0);
 static ROUTE: Mutex<Option<SoundboardRoute>> = Mutex::new(None);
 static CONFIGURATION_GENERATION: AtomicU64 = AtomicU64::new(0);
 static ROUTING_ENABLED: AtomicBool = AtomicBool::new(false);
-static MICROPHONE_MUTED: LazyLock<Arc<AtomicBool>> =
-    LazyLock::new(|| Arc::new(AtomicBool::new(false)));
+#[cfg(not(target_os = "windows"))]
+static MICROPHONE_MUTED: std::sync::LazyLock<Arc<AtomicBool>> =
+    std::sync::LazyLock::new(|| Arc::new(AtomicBool::new(false)));
 const CHIME_BYTES: &[u8] = include_bytes!("../../public/chime1.mp3");
 type StreamError = Arc<Mutex<Option<String>>>;
 
@@ -86,7 +91,7 @@ fn find_device(device_id: &str, input: bool) -> Result<cpal::Device, String> {
     .map_err(|error| format!("Cannot list audio devices: {error}"))?;
     devices
         .find(|device| device.id().is_ok_and(|id| id.to_string() == device_id))
-        .ok_or_else(|| format!("The selected {} is unavailable. Reconnect it, refresh devices, and choose it again in Audio setup.", if input { "microphone" } else { "cable output" }))
+        .ok_or_else(|| format!("The selected {} is unavailable. Reconnect it, refresh devices, and select it again in Chime configuration.", if input { "microphone" } else { "cable output" }))
 }
 
 fn is_feedback_pair(input: &str, output: &str) -> bool {
@@ -140,12 +145,14 @@ fn open_output(device: cpal::Device, error: StreamError) -> Result<MixerDeviceSi
 
 // Capture must never block the output callback: a missing or muted microphone
 // contributes silence while the separate chime source continues playing.
+#[cfg(not(target_os = "windows"))]
 struct MicrophoneSource {
     samples: rtrb::Consumer<f32>,
     sample_rate: rodio::SampleRate,
     muted: Arc<AtomicBool>,
 }
 
+#[cfg(not(target_os = "windows"))]
 impl Iterator for MicrophoneSource {
     type Item = f32;
 
@@ -159,6 +166,7 @@ impl Iterator for MicrophoneSource {
     }
 }
 
+#[cfg(not(target_os = "windows"))]
 impl Source for MicrophoneSource {
     fn current_span_len(&self) -> Option<usize> {
         None
@@ -174,6 +182,7 @@ impl Source for MicrophoneSource {
     }
 }
 
+#[cfg(not(target_os = "windows"))]
 fn capture<T>(
     device: &cpal::Device,
     config: &cpal::StreamConfig,
@@ -199,6 +208,7 @@ where
         .map_err(|error| format!("Cannot open the microphone: {error}. Check microphone access in system privacy settings."))
 }
 
+#[cfg(not(target_os = "windows"))]
 fn open_input(
     device: &cpal::Device,
     error: StreamError,
@@ -252,6 +262,7 @@ pub async fn configure_soundboard(
     tauri::async_runtime::spawn_blocking(move || {
         // Same lock order as set_microphone_muted; changing routes cannot leave
         // the virtual microphone muted by an earlier system-level mute.
+        #[cfg(not(target_os = "windows"))]
         let mut restore = super::MICROPHONE_RESTORE
             .lock()
             .map_err(|_| "The microphone mute lock is unavailable.")?;
@@ -268,6 +279,7 @@ pub async fn configure_soundboard(
             *active = None;
             return Ok(());
         }
+        #[cfg(not(target_os = "windows"))]
         super::restore_microphone_state(&mut restore)?;
         if let Some(route) = active.as_ref() {
             if route.input_id == input_device_id
@@ -281,35 +293,42 @@ pub async fn configure_soundboard(
         // Close old capture before switching or reporting a disconnected device.
         PLAYBACK_GENERATION.fetch_add(1, Ordering::Relaxed);
         *active = None;
-        if !input_device_id.is_empty() && input_device_id == output_device_id {
-            return Err("Choose your physical microphone as input, not the virtual cable.".into());
+        if input_device_id.is_empty() {
+            return Err("Select your active microphone in Chime configuration.".into());
+        }
+        if input_device_id == output_device_id {
+            return Err("Select your active microphone. The virtual cable cannot be the microphone to mute.".into());
         }
         #[cfg(target_os = "linux")]
         prepare_linux_output(&output_device_id)?;
         let output_device = find_device(&output_device_id, false)?;
-        let input_device = if input_device_id.is_empty() {
-            None
-        } else {
+        let input_device = {
             let input = find_device(&input_device_id, true)?;
             let input_name = input.description().map_err(|error| error.to_string())?;
             let output_name = output_device.description().map_err(|error| error.to_string())?;
             if is_feedback_pair(input_name.name(), output_name.name()) {
-                return Err("Choose your physical microphone as input. Using the virtual cable as both input and output would create feedback.".into());
+                return Err("Select your active microphone. The virtual cable cannot be the microphone to mute.".into());
             }
-            Some(input)
+            input
         };
         let input_error = Arc::new(Mutex::new(None));
         let output_error = Arc::new(Mutex::new(None));
         let output = open_output(output_device, Arc::clone(&output_error))?;
-        let input = if let Some(input_device) = input_device {
+        #[cfg(not(target_os = "windows"))]
+        let input = {
             let (input, source) = open_input(&input_device, Arc::clone(&input_error))?;
             if CONFIGURATION_GENERATION.load(Ordering::Relaxed) != generation {
                 return Ok(());
             }
             output.mixer().add(source);
             Some(input)
-        } else {
-            None // Chime-only mode still isolates the cable from system muting.
+        };
+        // Windows Listen supplies the voice loopback. Do not capture a
+        // second copy of the microphone here.
+        #[cfg(target_os = "windows")]
+        let input = {
+            drop(input_device);
+            None
         };
         if CONFIGURATION_GENERATION.load(Ordering::Relaxed) != generation {
             return Ok(());
@@ -328,6 +347,7 @@ pub async fn configure_soundboard(
     .map_err(|error| error.to_string())?
 }
 
+#[cfg(not(target_os = "windows"))]
 pub fn mute_microphone_if_routed(muted: bool) -> Result<bool, String> {
     MICROPHONE_MUTED.store(muted, Ordering::Relaxed);
     // An unavailable requested route must not fall back to muting the call's
@@ -356,7 +376,7 @@ pub fn stop_soundboard() -> Result<(), String> {
 
 fn validate_output(device_id: &str, volume: f32) -> Result<(), String> {
     if device_id.trim().is_empty() {
-        return Err("Choose a virtual audio cable output in Audio setup.".into());
+        return Err("Select a virtual cable output in Chime configuration.".into());
     }
     if !volume.is_finite() || !(0.0..=1.0).contains(&volume) {
         return Err("Choose a sound volume from 0% to 100%.".into());
@@ -482,6 +502,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_os = "windows"))]
     fn muted_or_disconnected_microphone_keeps_chime_playing_and_drains_speech() {
         let (mut tx, rx) = rtrb::RingBuffer::new(8);
         let muted = Arc::new(AtomicBool::new(true));

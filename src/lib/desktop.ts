@@ -85,8 +85,8 @@ export async function syncOverlayInteraction(pulsing = false): Promise<void> {
   );
 }
 
-export async function setMicrophoneMuted(muted: boolean): Promise<void> {
-  return invoke('set_microphone_muted', { muted });
+export async function setMicrophoneMuted(muted: boolean, inputDeviceId = ''): Promise<void> {
+  return invoke('set_microphone_muted', { muted, inputDeviceId });
 }
 
 export function soundboardOutputs(): Promise<Array<{ id: string; name: string }>> {
@@ -103,6 +103,10 @@ export function soundboardPlatform(): Promise<string> {
 
 export function setupSoundboardCable(): Promise<void> {
   return invoke('setup_soundboard_cable');
+}
+
+export function openMicrophoneSettings(): Promise<void> {
+  return invoke('open_microphone_settings');
 }
 
 export function configureSoundboard(inputDeviceId: string, outputDeviceId: string): Promise<void> {

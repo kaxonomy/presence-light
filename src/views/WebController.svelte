@@ -101,7 +101,7 @@
         opacity={1}
         dotSize={22}
         soundEnabled={true}
-        soundVolume={0.5}
+        soundVolume={0.3}
         soundOutputDevice=""
         soundInputDevice=""
         statusShortcut="CommandOrControl+Shift+KeyP"

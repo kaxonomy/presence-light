@@ -15,6 +15,7 @@
     soundboardInputs,
     soundboardPlatform,
     setupSoundboardCable,
+    openMicrophoneSettings,
   } from '../lib/desktop';
 
   let workerUrl = '';
@@ -25,7 +26,7 @@
   let opacity = 1;
   let dotSize = 22;
   let soundEnabled = true;
-  let soundVolume = 0.5;
+  let soundVolume = 0.3;
   let soundOutputDevice = '';
   let soundInputDevice = '';
   let audioOutputs: Array<{ id: string; name: string }> = [];
@@ -218,6 +219,7 @@
       {audioPlatform}
       onRefreshAudioOutputs={refreshAudioOutputs}
       onSetupAudio={setupSoundboardCable}
+      onOpenMicrophoneSettings={openMicrophoneSettings}
       onTestSound={testSound}
       onPreview={preview}
       onResetPosition={resetPosition}

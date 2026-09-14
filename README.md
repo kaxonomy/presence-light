@@ -25,33 +25,75 @@ For browser development, `VITE_PRESENCE_WS_URL` can supply the initial URL. The 
 ## Chime through your microphone
 
 Only the desktop controller sends the Busy chime. Viewer clients stay silent.
-The controller combines your voice and the chime in a virtual audio cable, which your call app uses as its microphone.
-The browser controller can change status, but desktop audio routing requires the native application.
+A virtual audio cable carries your voice and the chime to your call app.
+Loopback sends your active microphone audio to this cable.
+The default chime volume is 30%. Saved volume choices stay unchanged.
 
-1. Open **Configuration** on the desktop controller.
+### Windows
+
+Windows sends your voice to the cable through **Listen to this device**.
+Presence Light sends the chime to the same cable.
+After the Busy chime, Presence Light mutes the active microphone that you select.
+The cable stays active, so it can still carry chimes.
+
+1. Open **Configuration** from the tray.
 2. Click **Configure chime**.
-3. Open **Set up a virtual microphone**.
-4. If you do not have a cable, use the setup button for your platform:
-   - **Windows:** Install [VB-CABLE](https://vb-audio.com/Cable/) from the official page that opens.
-   - **macOS:** Install [BlackHole 2ch](https://existential.audio/blackhole/) from the official page that opens.
-   - **Linux:** Click **Create virtual microphone**. This uses PulseAudio or PipeWire with PulseAudio support.
-5. Click **Refresh devices**.
-6. Choose **CABLE Input**, **BlackHole 2ch**, or **Presence Light Cable** as the virtual cable output.
-7. Choose your physical microphone under **Your microphone**. Select **Chime only (no voice)** for chimes without your voice.
-8. In your call app, select **CABLE Output**, **BlackHole 2ch**, or **Presence Light Microphone** as the microphone.
-9. Keep your usual speakers or headphones selected in the call app.
-10. Click **Test chime**. Make sure that the microphone meter in your call app shows activity.
+3. Open **Set up microphone loopback**.
+4. If you do not have VB-CABLE, click **Get virtual audio cable**. Install [VB-CABLE](https://vb-audio.com/Cable/).
+5. If the installer requests a restart, restart your computer.
+6. Click **Refresh devices**.
+7. Under **Virtual cable output**, select **CABLE Input**.
+8. Under **Active microphone**, select the microphone that you use to speak.
+9. Click **Open microphone controls**.
+10. In **Recording**, select the same active microphone.
+11. Click **Properties**.
+12. Open **Listen**.
+13. Select **Listen to this device**.
+14. Under **Playback through this device**, select **CABLE Input**.
+15. Click **Apply**.
+16. In Discord, open **User Settings**, then **Voice & Video**.
+17. Under **Input Device**, select **CABLE Output**.
+18. Keep your usual speakers or headphones as the output device.
+19. Join a call with your friends.
+20. Click **Test chime**.
+21. Ask your friends if they heard the chime.
+22. Speak into your microphone. Ask your friends if they heard your voice.
+23. Change your status to **Busy**.
+24. After the chime, ask your friends if your voice is silent.
+25. Change your status to **Available**. Make sure that your friends can hear your voice again.
 
-Keep Presence Light open while you use this microphone. If your operating system requests microphone access, allow it.
-On Linux, the setup requires `pactl` and the ALSA PulseAudio plugin. Debian and Ubuntu provide `pulseaudio-utils` and `libasound2-plugins`.
+For other call apps, select **CABLE Output** as the microphone.
+Keep the microphone on in your call app. Its mute button also stops the chime.
+Discord documents its input device controls in its [voice troubleshooting guide](https://support.discord.com/hc/en-us/articles/360045138471-Discord-Voice-and-Video-Troubleshooting-Guide).
+
+### macOS and Linux
+
+Presence Light sends your active microphone audio to the virtual cable automatically.
+After the Busy chime, it mutes your voice in this cable.
+
+1. Open **Configure chime**, then **Set up microphone loopback**.
+2. On macOS, click **Get virtual audio cable**. Install [BlackHole 2ch](https://existential.audio/blackhole/).
+3. On Linux, click **Create virtual microphone**.
+4. Click **Refresh devices**.
+5. Select **BlackHole 2ch** or **Presence Light Cable** as the virtual cable output.
+6. Under **Active microphone**, select the microphone that you use to speak.
+7. In your call app, select **BlackHole 2ch** or **Presence Light Microphone** as the microphone.
+8. Keep your usual speakers or headphones as the output device.
+9. Keep Presence Light open while you use this microphone.
+10. Click **Test chime**. Ask your friends if they heard the chime and your voice.
+
+If your operating system requests microphone access, allow it.
+On Linux, setup requires `pactl` and the ALSA PulseAudio plugin. Debian and Ubuntu provide `pulseaudio-utils` and `libasound2-plugins`.
 Presence Light recreates its selected Linux cable when the controller starts.
 
-When you become Busy, Presence Light plays the chime, then mutes your microphone.
-When you become Available, Presence Light restores your microphone.
-If the chime is off or cannot play, Presence Light still mutes your microphone.
-The mute control has no separate configuration. Old configuration files remain compatible.
-With a virtual cable, Presence Light mutes only your voice. The test chime still plays.
-Keep the microphone on in your call app. Its mute button also stops the chime.
+### Automatic mute
+
+When you become Available, Presence Light restores the microphone that it muted.
+On Windows, it restores the same device even if the default microphone changes.
+A microphone that was already muted stays muted.
+If the chime is off or cannot play, Presence Light still mutes the active microphone.
+The test chime does not change your status or mute your microphone.
+If the selected microphone is unavailable, reconnect it and click **Refresh devices**.
 If the cable is unavailable, the application reports an error and does not send the chime to your speakers.
 
 ## Development

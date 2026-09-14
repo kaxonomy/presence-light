@@ -16,10 +16,11 @@ static DEBUG_LOG: OnceLock<Mutex<File>> = OnceLock::new();
 static CONFIG_LOCK: Mutex<()> = Mutex::new(());
 static MICROPHONE_RESTORE: Mutex<Option<MicrophoneRestore>> = Mutex::new(None);
 
-#[derive(Clone, Copy)]
 enum MicrophoneRestore {
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
     Unmute,
+    #[cfg(target_os = "windows")]
+    WindowsEndpoint(String),
     #[cfg(target_os = "macos")]
     InputVolume(u8),
 }
@@ -57,7 +58,7 @@ impl Default for SavedConfig {
             opacity: 1.0,
             dot_size: 22,
             sound_enabled: true,
-            sound_volume: 0.5,
+            sound_volume: 0.3,
             sound_output_device: String::new(),
             sound_input_device: String::new(),
             status_shortcut: "CommandOrControl+Shift+KeyP".into(),
@@ -220,7 +221,7 @@ fn command_output(mut command: std::process::Command) -> Result<String, String> 
 }
 
 #[cfg(target_os = "macos")]
-fn mute_system_microphone() -> Result<Option<MicrophoneRestore>, String> {
+fn mute_system_microphone(_input_device_id: &str) -> Result<Option<MicrophoneRestore>, String> {
     let mut command = std::process::Command::new("osascript");
     command.args(["-e", "input volume of (get volume settings)"]);
     let volume = command_output(command)?
@@ -236,7 +237,7 @@ fn mute_system_microphone() -> Result<Option<MicrophoneRestore>, String> {
 }
 
 #[cfg(target_os = "macos")]
-fn restore_system_microphone(restore: MicrophoneRestore) -> Result<(), String> {
+fn restore_system_microphone(restore: &MicrophoneRestore) -> Result<(), String> {
     let MicrophoneRestore::InputVolume(volume) = restore;
     let mut command = std::process::Command::new("osascript");
     command.args(["-e", &format!("set volume input volume {volume}")]);
@@ -244,7 +245,7 @@ fn restore_system_microphone(restore: MicrophoneRestore) -> Result<(), String> {
 }
 
 #[cfg(target_os = "linux")]
-fn mute_system_microphone() -> Result<Option<MicrophoneRestore>, String> {
+fn mute_system_microphone(_input_device_id: &str) -> Result<Option<MicrophoneRestore>, String> {
     let source = "@DEFAULT_SOURCE@";
     let mut query = std::process::Command::new("pactl");
     query.args(["get-source-mute", source]);
@@ -260,7 +261,7 @@ fn mute_system_microphone() -> Result<Option<MicrophoneRestore>, String> {
 }
 
 #[cfg(target_os = "linux")]
-fn restore_system_microphone(_restore: MicrophoneRestore) -> Result<(), String> {
+fn restore_system_microphone(_restore: &MicrophoneRestore) -> Result<(), String> {
     let mut command = std::process::Command::new("pactl");
     command.args(["set-source-mute", "@DEFAULT_SOURCE@", "0"]);
     command_output(command).map(drop)
@@ -268,23 +269,33 @@ fn restore_system_microphone(_restore: MicrophoneRestore) -> Result<(), String> 
 
 #[cfg(target_os = "windows")]
 fn with_audio_endpoint<T>(
+    input_device_id: &str,
     operation: impl FnOnce(
         &windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume,
     ) -> windows::core::Result<T>,
 ) -> Result<T, String> {
+    use windows::core::{Interface, HSTRING};
     use windows::Win32::{
-        Media::Audio::{eCapture, eCommunications, IMMDeviceEnumerator, MMDeviceEnumerator},
+        Media::Audio::{eCapture, IMMDeviceEnumerator, IMMEndpoint, MMDeviceEnumerator},
         System::Com::{
             CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_MULTITHREADED,
         },
     };
 
+    let endpoint_id = windows_endpoint_id(input_device_id)?;
     unsafe {
         let initialized = CoInitializeEx(None, COINIT_MULTITHREADED).is_ok();
         let result = (|| {
             let enumerator: IMMDeviceEnumerator =
                 CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)?;
-            let device = enumerator.GetDefaultAudioEndpoint(eCapture, eCommunications)?;
+            let device = enumerator.GetDevice(&HSTRING::from(endpoint_id))?;
+            let capture: IMMEndpoint = device.cast()?;
+            if capture.GetDataFlow()? != eCapture {
+                return Err(windows::core::Error::new(
+                    windows::Win32::Foundation::E_INVALIDARG,
+                    "Select an input microphone in Chime configuration.",
+                ));
+            }
             let endpoint = device.Activate(CLSCTX_ALL, None)?;
             operation(&endpoint)
         })();
@@ -296,32 +307,50 @@ fn with_audio_endpoint<T>(
 }
 
 #[cfg(target_os = "windows")]
-fn mute_system_microphone() -> Result<Option<MicrophoneRestore>, String> {
-    if with_audio_endpoint(|endpoint| unsafe { endpoint.GetMute() })?.as_bool() {
-        return Ok(None);
+fn windows_endpoint_id(input_device_id: &str) -> Result<String, String> {
+    let device = input_device_id
+        .parse::<rodio::cpal::DeviceId>()
+        .map_err(|_| "Select your active microphone in Chime configuration.".to_string())?;
+    if device.0 != rodio::cpal::HostId::Wasapi || device.1.is_empty() || device.1.contains('\0') {
+        return Err("Select your active microphone in Chime configuration.".into());
     }
-    with_audio_endpoint(|endpoint| unsafe { endpoint.SetMute(true, std::ptr::null()) })?;
-    Ok(Some(MicrophoneRestore::Unmute))
+    Ok(device.1)
 }
 
 #[cfg(target_os = "windows")]
-fn restore_system_microphone(_restore: MicrophoneRestore) -> Result<(), String> {
-    with_audio_endpoint(|endpoint| unsafe { endpoint.SetMute(false, std::ptr::null()) })
+fn mute_system_microphone(input_device_id: &str) -> Result<Option<MicrophoneRestore>, String> {
+    with_audio_endpoint(input_device_id, |endpoint| unsafe {
+        if endpoint.GetMute()?.as_bool() {
+            return Ok(None);
+        }
+        endpoint.SetMute(true, std::ptr::null())?;
+        Ok(Some(MicrophoneRestore::WindowsEndpoint(
+            input_device_id.into(),
+        )))
+    })
+}
+
+#[cfg(target_os = "windows")]
+fn restore_system_microphone(restore: &MicrophoneRestore) -> Result<(), String> {
+    let MicrophoneRestore::WindowsEndpoint(input_device_id) = restore;
+    with_audio_endpoint(input_device_id, |endpoint| unsafe {
+        endpoint.SetMute(false, std::ptr::null())
+    })
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-fn mute_system_microphone() -> Result<Option<MicrophoneRestore>, String> {
+fn mute_system_microphone(_input_device_id: &str) -> Result<Option<MicrophoneRestore>, String> {
     Err("Microphone muting is unavailable on this platform.".to_string())
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-fn restore_system_microphone(_restore: MicrophoneRestore) -> Result<(), String> {
+fn restore_system_microphone(_restore: &MicrophoneRestore) -> Result<(), String> {
     Err("Microphone muting is unavailable on this platform.".to_string())
 }
 
 fn restore_microphone_state(restore: &mut Option<MicrophoneRestore>) -> Result<(), String> {
     if let Some(previous) = restore.take() {
-        if let Err(error) = restore_system_microphone(previous) {
+        if let Err(error) = restore_system_microphone(&previous) {
             *restore = Some(previous);
             return Err(error);
         }
@@ -330,18 +359,27 @@ fn restore_microphone_state(restore: &mut Option<MicrophoneRestore>) -> Result<(
 }
 
 #[tauri::command]
-fn set_microphone_muted(muted: bool) -> Result<(), String> {
+fn set_microphone_muted(muted: bool, input_device_id: Option<String>) -> Result<(), String> {
     let mut restore = MICROPHONE_RESTORE
         .lock()
         .map_err(|_| "The microphone mute lock is unavailable.".to_string())?;
+    #[cfg(not(target_os = "windows"))]
     if soundboard::mute_microphone_if_routed(muted)? {
         // A call uses the virtual microphone: mute only physical mic samples,
         // leaving the cable and independently mixed chime audible.
         return restore_microphone_state(&mut restore);
     }
     if muted {
+        let input_device_id = input_device_id.unwrap_or_default();
+        #[cfg(target_os = "windows")]
+        if restore.as_ref().is_some_and(|previous| {
+            let MicrophoneRestore::WindowsEndpoint(previous_id) = previous;
+            previous_id != &input_device_id
+        }) {
+            restore_microphone_state(&mut restore)?;
+        }
         if restore.is_none() {
-            *restore = mute_system_microphone()?;
+            *restore = mute_system_microphone(&input_device_id)?;
         }
     } else {
         restore_microphone_state(&mut restore)?;
@@ -503,6 +541,7 @@ pub fn run() {
             soundboard::stop_soundboard_chime,
             audio_setup::soundboard_platform,
             audio_setup::setup_soundboard_cable,
+            audio_setup::open_microphone_settings,
             debug_log
         ])
         .build(tauri::generate_context!())
@@ -510,7 +549,7 @@ pub fn run() {
     app.run(|_, event| {
         if matches!(event, tauri::RunEvent::Exit) {
             let _ = soundboard::stop_soundboard();
-            let _ = set_microphone_muted(false);
+            let _ = set_microphone_muted(false, None);
             write_debug_log("INFO", "Presence Light stopped");
         }
     });
@@ -519,6 +558,22 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn selected_microphone_id_is_exact_and_has_no_default_fallback() {
+        let endpoint = "{0.0.1.00000000}.{12345678-1234-1234-1234-123456789abc}";
+        let id = format!("{}:{endpoint}", rodio::cpal::HostId::Wasapi);
+        assert_eq!(windows_endpoint_id(&id).unwrap(), endpoint);
+        for invalid in [
+            String::new(),
+            "default".into(),
+            "Wasapi:".into(),
+            format!("{id}\0other"),
+        ] {
+            assert!(windows_endpoint_id(&invalid).is_err());
+        }
+    }
 
     #[test]
     fn configuration_round_trip() {
@@ -565,7 +620,7 @@ mod tests {
         assert_eq!(legacy.opacity, 1.0);
         assert_eq!(legacy.dot_size, 22);
         assert!(legacy.sound_enabled);
-        assert_eq!(legacy.sound_volume, 0.5);
+        assert_eq!(legacy.sound_volume, 0.3);
         assert!(legacy.sound_output_device.is_empty());
         assert!(legacy.sound_input_device.is_empty());
         assert_eq!(legacy.visibility_shortcut, "CommandOrControl+Shift+KeyO");

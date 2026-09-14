@@ -12,6 +12,22 @@ pub async fn setup_soundboard_cable() -> Result<(), String> {
         .map_err(|error| format!("Audio cable setup stopped: {error}"))?
 }
 
+#[tauri::command]
+pub fn open_microphone_settings() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        return Command::new("control.exe")
+            .arg("mmsys.cpl,,1")
+            .creation_flags(0x08000000)
+            .spawn()
+            .map(|_| ())
+            .map_err(|error| format!("Cannot open the microphone controls: {error}"));
+    }
+    #[cfg(not(target_os = "windows"))]
+    Err("Windows microphone controls are unavailable on this platform.".into())
+}
+
 #[cfg(target_os = "windows")]
 fn setup_cable() -> Result<(), String> {
     use std::os::windows::process::CommandExt;

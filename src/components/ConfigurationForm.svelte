@@ -32,6 +32,7 @@
     audioPlatform?: string;
     onRefreshAudioOutputs?: () => Promise<void>;
     onSetupAudio?: () => Promise<void>;
+    onOpenMicrophoneSettings?: () => Promise<void>;
     onTestSound?: () => Promise<void>;
     onSave: (configuration: Configuration) => void | Promise<void>;
   };
@@ -45,7 +46,7 @@
     opacity = $bindable(1),
     dotSize = $bindable(22),
     soundEnabled = $bindable(true),
-    soundVolume = $bindable(0.5),
+    soundVolume = $bindable(0.3),
     soundOutputDevice = $bindable(''),
     soundInputDevice = $bindable(''),
     statusShortcut = $bindable('CommandOrControl+Shift+KeyP'),
@@ -64,12 +65,13 @@
     audioPlatform = '',
     onRefreshAudioOutputs,
     onSetupAudio,
+    onOpenMicrophoneSettings,
     onTestSound,
     onSave,
   }: Props = $props();
   let inputError = $state('');
   let capturing = $state<'status' | 'visibility' | null>(null);
-  let audioAction = $state<'setup' | 'refresh' | 'test' | null>(null);
+  let audioAction = $state<'setup' | 'refresh' | 'test' | 'microphone' | null>(null);
   let audioError = $state('');
   let copiedToken = $state('');
   let chimeDialog = $state<HTMLDialogElement>();
@@ -114,8 +116,8 @@
     };
   }
 
-  async function runAudioAction(action: 'setup' | 'refresh' | 'test'): Promise<void> {
-    const callback = action === 'setup' ? onSetupAudio : action === 'refresh' ? onRefreshAudioOutputs : onTestSound;
+  async function runAudioAction(action: 'setup' | 'refresh' | 'test' | 'microphone'): Promise<void> {
+    const callback = action === 'setup' ? onSetupAudio : action === 'refresh' ? onRefreshAudioOutputs : action === 'microphone' ? onOpenMicrophoneSettings : onTestSound;
     if (!callback || audioAction) return;
     audioError = '';
     audioAction = action;
@@ -123,7 +125,7 @@
       await callback();
       if (action === 'setup') await onRefreshAudioOutputs?.();
     } catch (cause) {
-      const description = action === 'setup' ? 'Cannot start audio setup' : action === 'refresh' ? 'Cannot refresh the audio devices' : 'Cannot play the test chime';
+      const description = action === 'setup' ? 'Cannot start audio setup' : action === 'refresh' ? 'Cannot refresh the audio devices' : action === 'microphone' ? 'Cannot open the microphone controls' : 'Cannot play the test chime';
       audioError = `${description}: ${cause instanceof Error ? cause.message : String(cause)}`;
     } finally {
       audioAction = null;
@@ -329,7 +331,9 @@
             <input type="checkbox" bind:checked={soundEnabled} />
             <span>
               <strong>Play a chime when I become Busy</strong>
-              <small>After the chime, Presence Light mutes your microphone until you become Available.</small>
+              <small>{soundEnabled
+                ? 'After the chime, Presence Light mutes your active microphone until you become Available.'
+                : 'When you become Busy, Presence Light mutes your active microphone immediately.'}</small>
             </span>
           </label>
           <label class="opacity" class:disabled={!soundEnabled}>
@@ -345,9 +349,9 @@
             <output>{Math.round(soundVolume * 100)}%</output>
           </label>
           <details>
-            <summary>Set up a virtual microphone</summary>
+            <summary>Set up microphone loopback</summary>
             <div class="audio-guide">
-              <small>A virtual cable sends your voice and the chime to your call app as one microphone.</small>
+              <small>Loopback sends your microphone audio to the virtual cable. Your call app receives your voice and the chime through this cable.</small>
               <ol>
                 <li>
                   {#if audioPlatform === 'windows'}
@@ -365,9 +369,27 @@
                     </button>
                   {/if}
                 </li>
-                <li>Click Refresh devices. Select your virtual cable. Select your physical microphone.</li>
+                <li>Click Refresh devices. Select your active microphone and virtual cable.</li>
+                {#if audioPlatform === 'windows'}
+                  <li>
+                    Open the Windows microphone controls. In Recording, select the same active microphone. Click Properties.
+                    {#if onOpenMicrophoneSettings}
+                      <button type="button" class="secondary" disabled={!!audioAction} onclick={() => void runAudioAction('microphone')}>
+                        {audioAction === 'microphone' ? 'Opening microphone controls…' : 'Open microphone controls'}
+                      </button>
+                    {/if}
+                  </li>
+                  <li>Open Listen. Select Listen to this device.</li>
+                  <li>Under Playback through this device, select CABLE Input. Click Apply.</li>
+                {:else}
+                  <li>Keep Presence Light open. It sends your active microphone audio to the virtual cable automatically.</li>
+                {/if}
                 <li>
-                  In your call app, choose
+                  {#if audioPlatform === 'windows'}
+                    In Discord, open User Settings, then Voice &amp; Video. Set Input Device to
+                  {:else}
+                    In your call app, select
+                  {/if}
                   {#if audioPlatform === 'windows'}
                     <strong>CABLE Output</strong>
                   {:else if audioPlatform === 'macos'}
@@ -377,7 +399,7 @@
                   {:else}
                     the microphone for the virtual cable
                   {/if}
-                  as the microphone. Keep your usual speakers or headphones.
+                  {audioPlatform === 'windows' ? 'for your microphone.' : 'as the microphone.'} Keep your usual speakers or headphones for output.
                 </li>
               </ol>
             </div>
@@ -406,9 +428,9 @@
             </small>
           </div>
           <div class="field">
-            <label for="sound-input">Your microphone</label>
+            <label for="sound-input">Active microphone</label>
             <select id="sound-input" bind:value={soundInputDevice}>
-              <option value="">Chime only (no voice)</option>
+              <option value="">Select your active microphone</option>
               {#if soundInputDevice && !audioInputs.some((device) => device.id === soundInputDevice)}
                 <option value={soundInputDevice}>Saved microphone unavailable. Reconnect it and refresh devices.</option>
               {/if}
@@ -416,7 +438,9 @@
                 <option value={device.id}>{device.name}</option>
               {/each}
             </select>
-            <small>Select your physical microphone to include your voice.</small>
+            <small>{audioPlatform === 'windows'
+              ? 'Select the microphone used for Windows loopback. Presence Light mutes this device after the chime.'
+              : 'Presence Light sends this microphone to the cable and mutes your voice after the chime.'}</small>
           </div>
           <div class="audio-actions">
             {#if onRefreshAudioOutputs}
@@ -428,14 +452,14 @@
               <button
                 type="button"
                 class="secondary"
-                disabled={!soundEnabled || !soundOutputDevice || !!audioAction}
+                disabled={!soundEnabled || !soundOutputDevice || !soundInputDevice || !!audioAction}
                 onclick={() => void runAudioAction('test')}
               >
                 {audioAction === 'test' ? 'Playing…' : 'Test chime'}
               </button>
             {/if}
           </div>
-          <small>Keep the microphone on in your call app. Its mute button also stops the chime. When you become Busy with the chime off, Presence Light mutes your microphone immediately.</small>
+          <small>After the test, ask your friends if they heard the chime. Keep the microphone on in your call app.</small>
           {#if audioError || error}
             <p class="error" role="alert">{audioError || error}</p>
           {:else if autoSave}

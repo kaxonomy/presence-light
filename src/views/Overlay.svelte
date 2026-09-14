@@ -29,7 +29,7 @@
   let opacity = 1;
   let dotSize = 22;
   let soundEnabled = true;
-  let soundVolume = 0.5;
+  let soundVolume = 0.3;
   let soundOutputDevice = '';
   let pulsing = false;
   let pulseId = 0;
@@ -95,11 +95,6 @@
         soundEnabled = config.soundEnabled;
         soundVolume = config.soundVolume;
         soundOutputDevice = config.soundOutputDevice;
-        if (!config.canControl) {
-          await setMicrophoneMuted(false).catch((error) =>
-            console.warn('[presence] microphone restore failed', error),
-          );
-        }
         try {
           const routeEnabled = config.canControl && config.soundOutputDevice;
           await configureSoundboard(
@@ -114,6 +109,13 @@
         if (disposed) {
           await configureSoundboard('', '');
           return;
+        }
+        if (!config.canControl || initialized) {
+          await setMicrophoneMuted(config.canControl && state.status === 'busy', config.soundInputDevice).catch((error) => {
+            setupError = error instanceof Error ? error.message : String(error);
+            console.warn('[presence] microphone update failed', error);
+            void window.emitTo('configuration', 'desktop-error', setupError);
+          });
         }
         client = createPresenceClient(config.workerUrl, config.token, config.canControl);
         let synchronized = false;
@@ -140,7 +142,7 @@
           if (effects.microphoneMuted !== null) {
             const generation = ++audioGeneration;
             const muted = effects.microphoneMuted;
-            const updateMicrophone = () => setMicrophoneMuted(muted);
+            const updateMicrophone = () => setMicrophoneMuted(muted, config.soundInputDevice);
             if (!effects.microphoneMuted) void stopSoundboardChime();
             const audioUpdate = effects.playChime
               ? playChimeThenMute(
