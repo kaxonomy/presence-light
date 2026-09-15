@@ -10,6 +10,7 @@
     opacity: number;
     dotSize: number;
     soundEnabled: boolean;
+    viewerSoundEnabled: boolean;
     soundVolume: number;
     soundOutputDevice: string;
     soundInputDevice: string;
@@ -25,7 +26,7 @@
     busy?: boolean;
     error?: string;
     buttonLabel?: string;
-    onPreview?: (appearance: Pick<Configuration, 'animations' | 'opacity' | 'dotSize' | 'soundEnabled' | 'soundVolume'>) => void;
+    onPreview?: (appearance: Pick<Configuration, 'animations' | 'opacity' | 'dotSize' | 'soundEnabled' | 'viewerSoundEnabled' | 'soundVolume' | 'canControl'>) => void;
     onResetPosition?: () => void | Promise<void>;
     audioOutputs?: { id: string; name: string }[];
     audioInputs?: { id: string; name: string }[];
@@ -45,7 +46,8 @@
     animations = $bindable(true),
     opacity = $bindable(1),
     dotSize = $bindable(22),
-    soundEnabled = $bindable(true),
+    soundEnabled = $bindable(false),
+    viewerSoundEnabled = $bindable(false),
     soundVolume = $bindable(0.3),
     soundOutputDevice = $bindable(''),
     soundInputDevice = $bindable(''),
@@ -108,6 +110,7 @@
       opacity,
       dotSize,
       soundEnabled,
+      viewerSoundEnabled,
       soundVolume,
       soundOutputDevice,
       soundInputDevice,
@@ -164,7 +167,7 @@
   }
 
   $effect(() => {
-    if (showAppearance) onPreview?.({ animations, opacity, dotSize, soundEnabled, soundVolume });
+    if (showAppearance) onPreview?.({ animations, opacity, dotSize, soundEnabled, viewerSoundEnabled, soundVolume, canControl });
   });
 
   $effect(() => {
@@ -318,6 +321,21 @@
             Configure chime
           </button>
         </div>
+      {:else}
+        <label class="choice compact">
+          <input type="checkbox" bind:checked={viewerSoundEnabled} />
+          <span>
+            <strong>Play chime on this device</strong>
+            <small>Play a local sound when the status becomes Busy. Off stops the sound immediately.</small>
+          </span>
+        </label>
+        {#if viewerSoundEnabled}
+          <label class="opacity">
+            <span>Chime volume</span>
+            <input type="range" min="0" max="1" step="0.05" bind:value={soundVolume} />
+            <output>{Math.round(soundVolume * 100)}%</output>
+          </label>
+        {/if}
       {/if}
     </div>
     {#if canControl}

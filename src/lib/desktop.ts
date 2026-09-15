@@ -24,6 +24,7 @@ export type DesktopConfig = {
   opacity: number;
   dotSize: number;
   soundEnabled: boolean;
+  viewerSoundEnabled: boolean;
   soundVolume: number;
   soundOutputDevice: string;
   soundInputDevice: string;
@@ -48,6 +49,7 @@ export async function saveDesktopConfig(configuration: {
   opacity: number;
   dotSize: number;
   soundEnabled: boolean;
+  viewerSoundEnabled: boolean;
   soundVolume: number;
   soundOutputDevice: string;
   soundInputDevice: string;

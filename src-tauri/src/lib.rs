@@ -36,6 +36,7 @@ struct SavedConfig {
     opacity: f64,
     dot_size: u8,
     sound_enabled: bool,
+    viewer_sound_enabled: bool,
     sound_volume: f64,
     sound_output_device: String,
     sound_input_device: String,
@@ -57,7 +58,8 @@ impl Default for SavedConfig {
             animations: true,
             opacity: 1.0,
             dot_size: 22,
-            sound_enabled: true,
+            sound_enabled: false,
+            viewer_sound_enabled: false,
             sound_volume: 0.3,
             sound_output_device: String::new(),
             sound_input_device: String::new(),
@@ -80,6 +82,7 @@ struct DesktopConfig {
     opacity: f64,
     dot_size: u8,
     sound_enabled: bool,
+    viewer_sound_enabled: bool,
     sound_volume: f64,
     sound_output_device: String,
     sound_input_device: String,
@@ -405,6 +408,7 @@ fn desktop_config(app: AppHandle) -> Result<DesktopConfig, String> {
         opacity: config.opacity,
         dot_size: config.dot_size,
         sound_enabled: config.sound_enabled,
+        viewer_sound_enabled: config.viewer_sound_enabled,
         sound_volume: config.sound_volume,
         sound_output_device: config.sound_output_device,
         sound_input_device: config.sound_input_device,
@@ -428,6 +432,7 @@ fn save_desktop_config(
     opacity: f64,
     dot_size: u8,
     sound_enabled: bool,
+    viewer_sound_enabled: bool,
     sound_volume: f64,
     sound_output_device: String,
     sound_input_device: String,
@@ -486,6 +491,7 @@ fn save_desktop_config(
             opacity,
             dot_size,
             sound_enabled,
+            viewer_sound_enabled,
             sound_volume,
             sound_output_device,
             sound_input_device,
@@ -586,6 +592,7 @@ mod tests {
             opacity: 0.75,
             dot_size: 30,
             sound_enabled: true,
+            viewer_sound_enabled: false,
             sound_volume: 0.5,
             sound_output_device: "virtual-cable".into(),
             sound_input_device: "physical-microphone".into(),
@@ -603,6 +610,7 @@ mod tests {
         assert_eq!(config.opacity, 0.75);
         assert_eq!(config.dot_size, 30);
         assert!(config.sound_enabled);
+        assert!(!config.viewer_sound_enabled);
         assert_eq!(config.sound_volume, 0.5);
         assert_eq!(config.sound_output_device, "virtual-cable");
         assert_eq!(config.sound_input_device, "physical-microphone");
@@ -619,11 +627,26 @@ mod tests {
         assert!(legacy.animations);
         assert_eq!(legacy.opacity, 1.0);
         assert_eq!(legacy.dot_size, 22);
-        assert!(legacy.sound_enabled);
+        assert!(!legacy.sound_enabled);
+        assert!(!legacy.viewer_sound_enabled);
         assert_eq!(legacy.sound_volume, 0.3);
         assert!(legacy.sound_output_device.is_empty());
         assert!(legacy.sound_input_device.is_empty());
         assert_eq!(legacy.visibility_shortcut, "CommandOrControl+Shift+KeyO");
+        let old_viewer: SavedConfig =
+            serde_yaml::from_str("canControl: false\nsoundEnabled: true\n").unwrap();
+        assert!(!old_viewer.viewer_sound_enabled);
+        for enabled in [true, false] {
+            let viewer: SavedConfig = serde_yaml::from_str(&format!(
+                "canControl: false\nviewerSoundEnabled: {enabled}\n"
+            ))
+            .unwrap();
+            let saved = serde_yaml::to_string(&viewer).unwrap();
+            assert_eq!(
+                serde_yaml::from_str::<SavedConfig>(&saved).unwrap().viewer_sound_enabled,
+                enabled
+            );
+        }
         for removed_value in ["true", "false"] {
             let migrated: SavedConfig =
                 serde_yaml::from_str(&format!("{text}muteMicrophoneWhenBusy: {removed_value}\n"))

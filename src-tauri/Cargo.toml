@@ -1,6 +1,6 @@
 [package]
 name = "presence-light"
-version = "1.1.0"
+version = "1.1.1"
 description = "A small shared presence indicator"
 authors = ["Presence Light contributors"]
 edition = "2021"

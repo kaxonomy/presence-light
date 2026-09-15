@@ -28,7 +28,8 @@
   let animations = true;
   let opacity = 1;
   let dotSize = 22;
-  let soundEnabled = true;
+  let soundEnabled = false;
+  let viewerSoundEnabled = false;
   let soundVolume = 0.3;
   let soundOutputDevice = '';
   let pulsing = false;
@@ -60,6 +61,8 @@
   }
 
   onMount(() => {
+    const viewerChime = new Audio('/chime1.mp3');
+    viewerChime.muted = true;
     let client: PresenceClient | undefined;
     let cleanup: Array<() => void | Promise<void>> = [];
     let disposed = false;
@@ -70,8 +73,24 @@
     let resetQueued = false;
     let audioGeneration = 0;
 
+    function updateSound(config: Pick<import('../components/ConfigurationForm.svelte').Configuration, 'soundEnabled' | 'viewerSoundEnabled' | 'soundVolume' | 'canControl'>): void {
+      soundEnabled = config.soundEnabled;
+      viewerSoundEnabled = config.viewerSoundEnabled;
+      soundVolume = config.soundVolume;
+      viewerChime.volume = soundVolume;
+      viewerChime.muted = config.canControl || !viewerSoundEnabled;
+      if (viewerChime.muted) {
+        viewerChime.pause();
+        viewerChime.currentTime = 0;
+      }
+      if (!config.canControl || !soundEnabled) void stopSoundboardChime();
+    }
+
     async function reset(): Promise<void> {
       audioGeneration += 1;
+      viewerChime.muted = true;
+      viewerChime.pause();
+      viewerChime.currentTime = 0;
       await stopSoundboardChime().catch((error) =>
         console.warn('[presence] chime cleanup failed', error),
       );
@@ -92,8 +111,7 @@
         animations = config.animations;
         opacity = config.opacity;
         dotSize = config.dotSize;
-        soundEnabled = config.soundEnabled;
-        soundVolume = config.soundVolume;
+        updateSound(config);
         soundOutputDevice = config.soundOutputDevice;
         try {
           const routeEnabled = config.canControl && config.soundOutputDevice;
@@ -132,12 +150,24 @@
             soundEnabled,
             config.canControl,
             !!config.soundOutputDevice || initialized,
+            viewerSoundEnabled,
           );
           synchronized = true;
           if (effects.pulsing) {
             pulseId += 1;
             pulsing = true;
             void syncOverlayInteraction(true);
+          }
+          if (!config.canControl) {
+            if (effects.playChime) {
+              viewerChime.currentTime = 0;
+              void viewerChime.play().catch((error) =>
+                console.warn('[presence] viewer chime failed', error),
+              );
+            } else if (next.status !== 'busy') {
+              viewerChime.pause();
+              viewerChime.currentTime = 0;
+            }
           }
           if (effects.microphoneMuted !== null) {
             const generation = ++audioGeneration;
@@ -212,6 +242,7 @@
     const stopRefresh = listen<import('../components/ConfigurationForm.svelte').Configuration>(
       'configuration-saved',
       ({ payload }) => {
+        updateSound(payload);
         const needsReset = !activeConfig
           || payload.workerUrl.trim() !== activeConfig.workerUrl
           || payload.token.trim() !== activeConfig.token
@@ -223,18 +254,14 @@
         if (needsReset) void queueReset();
       },
     );
-    const stopPreview = listen<Pick<import('../components/ConfigurationForm.svelte').Configuration, 'animations' | 'opacity' | 'dotSize' | 'soundEnabled' | 'soundVolume'>>(
+    const stopPreview = listen<Pick<import('../components/ConfigurationForm.svelte').Configuration, 'animations' | 'opacity' | 'dotSize' | 'soundEnabled' | 'viewerSoundEnabled' | 'soundVolume' | 'canControl'>>(
       'configuration-preview',
       ({ payload }) => {
         animations = payload.animations;
         if (!animations) acknowledge();
         opacity = payload.opacity;
         dotSize = payload.dotSize;
-        soundEnabled = payload.soundEnabled;
-        soundVolume = payload.soundVolume;
-        if (!soundEnabled) {
-          void stopSoundboardChime();
-        }
+        updateSound(payload);
       },
     );
     const stopConfigurationClosed = listen('configuration-closed', () => {
@@ -254,6 +281,8 @@
     return () => {
       disposed = true;
       audioGeneration += 1;
+      viewerChime.muted = true;
+      viewerChime.pause();
       clearTimeout(moveTimer);
       void stopSoundboardChime();
       void configureSoundboard('', '');

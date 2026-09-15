@@ -100,7 +100,8 @@
         animations={true}
         opacity={1}
         dotSize={22}
-        soundEnabled={true}
+        soundEnabled={false}
+        viewerSoundEnabled={false}
         soundVolume={0.3}
         soundOutputDevice=""
         soundInputDevice=""

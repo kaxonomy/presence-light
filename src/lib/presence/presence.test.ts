@@ -101,6 +101,21 @@ describe('presence application logic', () => {
       .toBe(false);
   });
 
+  it('requires the separate viewer preference before playing a local chime', () => {
+    const update = (controllerSound: boolean, viewerSound = false, synchronized = true) =>
+      presenceTransitionEffects('available', 'busy', synchronized, true, controllerSound, false, false, viewerSound);
+
+    // An old configuration can enable controller sound without enabling viewer sound.
+    expect(update(true).playChime).toBe(false);
+    expect(update(false).playChime).toBe(false);
+    expect(update(false, true)).toEqual({ pulsing: true, playChime: true, microphoneMuted: null });
+    expect(update(true, false).playChime).toBe(false);
+    expect(update(false, true, false).playChime).toBe(false);
+    // Viewer sound cannot enable a controller's cable chime.
+    expect(presenceTransitionEffects('available', 'busy', true, true, false, true, false, true).playChime)
+      .toBe(false);
+  });
+
   it('mutes only after the chime finishes', async () => {
     let finishChime!: () => void;
     const chime = new Promise<void>((resolve) => { finishChime = resolve; });

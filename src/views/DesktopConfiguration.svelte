@@ -25,7 +25,8 @@
   let animations = true;
   let opacity = 1;
   let dotSize = 22;
-  let soundEnabled = true;
+  let soundEnabled = false;
+  let viewerSoundEnabled = false;
   let soundVolume = 0.3;
   let soundOutputDevice = '';
   let soundInputDevice = '';
@@ -74,6 +75,7 @@
         opacity = configuration.opacity;
         dotSize = configuration.dotSize;
         soundEnabled = configuration.soundEnabled;
+        viewerSoundEnabled = configuration.viewerSoundEnabled;
         soundVolume = configuration.soundVolume;
         soundOutputDevice = configuration.soundOutputDevice;
         soundInputDevice = configuration.soundInputDevice;
@@ -90,6 +92,7 @@
           opacity,
           dotSize,
           soundEnabled,
+          viewerSoundEnabled,
           soundVolume,
           soundOutputDevice,
           soundInputDevice,
@@ -150,7 +153,7 @@
     saveRunning = false;
   }
 
-  function preview(appearance: Pick<Configuration, 'animations' | 'opacity' | 'dotSize' | 'soundEnabled' | 'soundVolume'>): void {
+  function preview(appearance: Pick<Configuration, 'animations' | 'opacity' | 'dotSize' | 'soundEnabled' | 'viewerSoundEnabled' | 'soundVolume' | 'canControl'>): void {
     void getCurrentWindow().emitTo('overlay', 'configuration-preview', appearance);
   }
 
@@ -203,6 +206,7 @@
       bind:opacity
       bind:dotSize
       bind:soundEnabled
+      bind:viewerSoundEnabled
       bind:soundVolume
       bind:soundOutputDevice
       bind:soundInputDevice
