@@ -2,6 +2,21 @@
 
 Presence Light is a two-state presence client for one Cloudflare Worker room. It includes a Tauri desktop overlay and a browser controller.
 
+## Update an existing installation
+
+Update Presence Light on each computer, including Viewer devices.
+Replacing a release on GitHub does not update an installed application.
+Version 1.1.0 reads existing configuration files. You do not need to delete them.
+
+1. In the Presence Light tray menu, select **Quit**.
+2. Download the new installer from the [v1.1 release](https://github.com/kaxonomy/presence-light/releases/tag/v1.1).
+3. Install the update on the same computer.
+4. Start Presence Light.
+5. On a Viewer device, open **Configuration**. Make sure that **Device role** is **Viewer**.
+
+The updated Viewer does not generate chimes, even if an old configuration file enables sound.
+It can still receive the controller's chime through a call app such as Discord.
+
 ## Configuration
 
 Open the controller page. Then enter the server address (WebSocket URL) and the controller token.
