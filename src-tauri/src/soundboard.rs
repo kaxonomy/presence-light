@@ -123,7 +123,7 @@ fn stream_error(error: &StreamError) -> Result<(), String> {
 fn error_callback(
     error: StreamError,
     device: &'static str,
-) -> impl FnMut(cpal::StreamError) + Send + 'static {
+) -> impl FnMut(cpal::Error) + Send + 'static {
     move |cause| {
         if let Ok(mut error) = error.lock() {
             *error = Some(format!(
@@ -194,7 +194,7 @@ where
     f32: FromSample<T>,
 {
     let channels = usize::from(config.channels);
-    device.build_input_stream::<T, _, _>(config, move |data, _| {
+    device.build_input_stream::<T, _, _>(*config, move |data, _| {
         for frame in data.chunks_exact(channels) {
             let mono = if MICROPHONE_MUTED.load(Ordering::Relaxed) {
                 0.0

@@ -314,10 +314,13 @@ fn windows_endpoint_id(input_device_id: &str) -> Result<String, String> {
     let device = input_device_id
         .parse::<rodio::cpal::DeviceId>()
         .map_err(|_| "Select your active microphone in Chime configuration.".to_string())?;
-    if device.0 != rodio::cpal::HostId::Wasapi || device.1.is_empty() || device.1.contains('\0') {
+    if device.host() != rodio::cpal::HostId::Wasapi
+        || device.id().is_empty()
+        || device.id().contains('\0')
+    {
         return Err("Select your active microphone in Chime configuration.".into());
     }
-    Ok(device.1)
+    Ok(device.id().to_string())
 }
 
 #[cfg(target_os = "windows")]
@@ -643,7 +646,9 @@ mod tests {
             .unwrap();
             let saved = serde_yaml::to_string(&viewer).unwrap();
             assert_eq!(
-                serde_yaml::from_str::<SavedConfig>(&saved).unwrap().viewer_sound_enabled,
+                serde_yaml::from_str::<SavedConfig>(&saved)
+                    .unwrap()
+                    .viewer_sound_enabled,
                 enabled
             );
         }

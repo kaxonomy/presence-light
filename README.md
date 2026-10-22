@@ -117,6 +117,8 @@ If the cable is unavailable, the application reports an error and does not send 
 
 ## Development
 
+Use Node.js 24 (or Node.js 22.12+ in the 22.x release line), pnpm 12.15.0, and Rust 1.90 or newer.
+
 Install dependencies:
 
 ```sh
