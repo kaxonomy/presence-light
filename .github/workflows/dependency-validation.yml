@@ -46,6 +46,6 @@ jobs:
       - run: pnpm check
       - run: pnpm test
       - run: pnpm build
-      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked ${{ matrix.platform == 'macos-latest' && '--features tauri/macos-private-api' || '' }}
       - name: Build the native installer
         run: pnpm tauri build --bundles ${{ matrix.bundle }} ${{ matrix.args }}
