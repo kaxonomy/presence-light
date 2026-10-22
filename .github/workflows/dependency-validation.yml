@@ -48,5 +48,5 @@ jobs:
       - run: pnpm build
       # The CLI synchronizes platform-specific Cargo features with the Tauri config.
       - name: Build the native installer
-        run: pnpm tauri build --bundles ${{ matrix.bundle }} ${{ matrix.args }}
+        run: pnpm tauri build --bundles ${{ matrix.bundle }} ${{ matrix.args }} -- --locked
       - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
